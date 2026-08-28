@@ -5,7 +5,7 @@ lua54 'yes'
 name 'cipher-trucking'
 author 'XyraL'
 description 'Cipher — Trucking. Civilian delivery-job loop for QBox/QBCore.'
-version '2.1.1'
+version '2.2.0'
 
 -- Works on QBox (qbx_core) OR QBCore (qb-core). The bridge auto-detects.
 dependencies {
