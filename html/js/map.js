@@ -24,7 +24,10 @@ const CipherMap = (() => {
         maxZoom: 6,
         // The GTA world rectangle the render covers — same calibration as the
         // MDT. If pins sit slightly off, nudge here.
-        world: { minX: -3900, maxX: 4300, minY: -4500, maxY: 8100 },
+        // Calibrated against landmarks with known coordinates — the depot on
+    // Terminal Island, Sandy Shores airfield, Mount Chiliad, Paleto Bay. The
+    // old numbers put the trucking depot in the sea.
+    world: { minX: -4508, maxX: 5086, minY: -4891, maxY: 8317 },
     };
 
     let _map = null;
