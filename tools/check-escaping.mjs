@@ -31,8 +31,7 @@ const FREE_TEXT = [
 // A checker that always reports the same known-safe lines is one people learn
 // to ignore, and then it stops catching the real ones too. Each entry says why.
 const ALLOW = [
-  { match: "${d.name}",
-    why: "DISTRICTS is a const array of map labels in that file" },
+  // Nothing needed here — every hit this reports is a real one.
 ];
 
 const root = process.argv[2] || 'html/js';

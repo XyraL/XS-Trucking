@@ -50,6 +50,13 @@ files {
     'html/index.html',
     'html/css/style.css',
     'html/js/map.js',
+    -- Leaflet is vendored (BSD-2) — NUI has no reliable internet, so no CDN.
+    'html/vendor/leaflet/leaflet.js',
+    'html/vendor/leaflet/leaflet.css',
+    'html/vendor/leaflet/images/*.png',
+    'html/vendor/leaflet/LICENSE.txt',
+    -- Map tile pyramid, shared with the MDT and admin panel.
+    'html/assets/maps/tiles/*.webp',
     'html/js/app.js',
     'html/js/admin.js',
 }

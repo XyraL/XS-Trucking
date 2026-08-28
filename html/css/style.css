@@ -655,6 +655,20 @@ html, body {
 
 #map-svg { width: 100%; height: 100%; display: block; }
 
+/* The Leaflet container. The old SVG brought its own height through its
+   aspect ratio; a tile map does not, so the root takes a concrete one. */
+#map-root { min-height: 520px; }
+#map-leaflet { position: absolute; inset: 0; }
+/* Leaflet's default look fights the dashboard theme. */
+#map-root .leaflet-container { background: #0a0e14; font: inherit; }
+#map-root .leaflet-control-zoom a {
+    background: #14181f; color: #cfd6e4; border-color: rgba(255,255,255,.08);
+}
+#map-root .leaflet-tooltip {
+    background: #14181f; color: #e8ecf4; border: 1px solid rgba(255,255,255,.12);
+    box-shadow: 0 4px 14px rgba(0,0,0,.4);
+}
+
 .map-ocean { fill: #0e1116; }
 .map-grid-line { stroke: rgba(255, 255, 255, .028); stroke-width: .5; }
 .map-land { fill: url(#map-land-grad); }
