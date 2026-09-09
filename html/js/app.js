@@ -1,4 +1,4 @@
-const RES = 'XS-Trucking';
+const RES = typeof GetParentResourceName === 'function' ? GetParentResourceName() : 'XS-Trucking';
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => document.querySelectorAll(s);
 
