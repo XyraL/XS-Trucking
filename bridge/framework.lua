@@ -43,7 +43,7 @@ if not IsDuplicityVersion() then
             end)
         end
     else
-        print('^1[cipher-trucking]^0 RegisterNUICallback unavailable when the bridge loaded — NUI wrapper skipped.')
+        print('^1[XS-Trucking]^0 RegisterNUICallback unavailable when the bridge loaded — NUI wrapper skipped.')
     end
 end
 
@@ -56,7 +56,7 @@ elseif GetResourceState('qb-core') == 'started' then
     Framework.core = exports['qb-core']:GetCoreObject()
 else
     -- Defer the error so the resource still loads its UI; log loudly.
-    print('^1[cipher-trucking]^0 No supported framework found. Start qbx_core or qb-core before cipher-trucking.')
+    print('^1[XS-Trucking]^0 No supported framework found. Start qbx_core or qb-core before XS-Trucking.')
 end
 
 local IS_SERVER = IsDuplicityVersion()
@@ -106,13 +106,13 @@ if IS_SERVER then
     function Framework.AddMoney(src, account, amount, reason)
         local player = Framework.GetPlayer(src)
         if not player then return false end
-        return player.Functions.AddMoney(account, amount, reason or 'cipher-trucking')
+        return player.Functions.AddMoney(account, amount, reason or 'XS-Trucking')
     end
 
     function Framework.RemoveMoney(src, account, amount, reason)
         local player = Framework.GetPlayer(src)
         if not player then return false end
-        return player.Functions.RemoveMoney(account, amount, reason or 'cipher-trucking')
+        return player.Functions.RemoveMoney(account, amount, reason or 'XS-Trucking')
     end
 
     function Framework.GetMoney(src, account)
@@ -142,6 +142,6 @@ else
 end
 
 if Config and Config.Debug then
-    print(('^2[cipher-trucking]^0 bridge loaded (%s) on %s'):format(
+    print(('^2[XS-Trucking]^0 bridge loaded (%s) on %s'):format(
         Framework.name or 'none', IS_SERVER and 'server' or 'client'))
 end

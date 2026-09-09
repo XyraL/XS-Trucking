@@ -47,7 +47,7 @@ do
             local results = { pcall(fn, src, ...) }
 
             if not results[1] then
-                print(('^1[cipher-trucking]^0 callback "%s" errored — returning nil so the UI does not hang.\n  %s')
+                print(('^1[XS-Trucking]^0 callback "%s" errored — returning nil so the UI does not hang.\n  %s')
                     :format(name, tostring(results[2])))
                 return nil
             end
@@ -67,15 +67,15 @@ DBFailed = false
 DBLoaded = true
 
 local function log(msg)
-    print(('^3[cipher-trucking]^0 %s'):format(msg))
+    print(('^3[XS-Trucking]^0 %s'):format(msg))
 end
 
 local function logError(msg)
-    print(('^1[cipher-trucking]^0 %s'):format(msg))
+    print(('^1[XS-Trucking]^0 %s'):format(msg))
 end
 
 -- ── Schema ───────────────────────────────────────────────────
--- Order matters: cipher_trucking_companies must exist before the four
+-- Order matters: xs_trucking_companies must exist before the four
 -- tables that carry a foreign key onto it.
 --
 -- JSON columns are deliberately NULLable with no DEFAULT. A DEFAULT on a
@@ -84,9 +84,9 @@ end
 -- `o.upgrades || '{}'` in the NUI), so nothing gains from the default.
 local TABLES = {
     {
-        name = 'cipher_trucking_stats',
+        name = 'xs_trucking_stats',
         sql = [[
-            CREATE TABLE IF NOT EXISTS `cipher_trucking_stats` (
+            CREATE TABLE IF NOT EXISTS `xs_trucking_stats` (
                 `citizenid`       VARCHAR(64)  NOT NULL,
                 `name`            VARCHAR(96)  NOT NULL DEFAULT '',
                 `xp`              INT          NOT NULL DEFAULT 0,
@@ -99,9 +99,9 @@ local TABLES = {
         ]],
     },
     {
-        name = 'cipher_trucking_companies',
+        name = 'xs_trucking_companies',
         sql = [[
-            CREATE TABLE IF NOT EXISTS `cipher_trucking_companies` (
+            CREATE TABLE IF NOT EXISTS `xs_trucking_companies` (
                 `id`               INT UNSIGNED NOT NULL AUTO_INCREMENT,
                 `name`             VARCHAR(64)  NOT NULL,
                 `label`            VARCHAR(64)  NOT NULL,
@@ -117,9 +117,9 @@ local TABLES = {
         ]],
     },
     {
-        name = 'cipher_trucking_owned',
+        name = 'xs_trucking_owned',
         sql = [[
-            CREATE TABLE IF NOT EXISTS `cipher_trucking_owned` (
+            CREATE TABLE IF NOT EXISTS `xs_trucking_owned` (
                 `id`                   INT UNSIGNED NOT NULL AUTO_INCREMENT,
                 `citizenid`            VARCHAR(64)  NOT NULL,
                 `company_id`           INT UNSIGNED NULL,
@@ -144,9 +144,9 @@ local TABLES = {
         ]],
     },
     {
-        name = 'cipher_trucking_deliveries',
+        name = 'xs_trucking_deliveries',
         sql = [[
-            CREATE TABLE IF NOT EXISTS `cipher_trucking_deliveries` (
+            CREATE TABLE IF NOT EXISTS `xs_trucking_deliveries` (
                 `id`                  INT UNSIGNED NOT NULL AUTO_INCREMENT,
                 `citizenid`           VARCHAR(64)  NOT NULL,
                 `contract_id`         VARCHAR(64)  NOT NULL,
@@ -179,9 +179,9 @@ local TABLES = {
         -- once an admin has changed it; anything absent keeps tracking
         -- config.lua, so editing the config file still works normally for
         -- everything nobody has touched in-panel.
-        name = 'cipher_trucking_settings',
+        name = 'xs_trucking_settings',
         sql = [[
-            CREATE TABLE IF NOT EXISTS `cipher_trucking_settings` (
+            CREATE TABLE IF NOT EXISTS `xs_trucking_settings` (
                 `key`        VARCHAR(64) NOT NULL,
                 `value`      TEXT        NOT NULL,
                 `updated_at` TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -190,23 +190,23 @@ local TABLES = {
         ]],
     },
     {
-        name = 'cipher_trucking_company_ranks',
+        name = 'xs_trucking_company_ranks',
         sql = [[
-            CREATE TABLE IF NOT EXISTS `cipher_trucking_company_ranks` (
+            CREATE TABLE IF NOT EXISTS `xs_trucking_company_ranks` (
                 `company_id`  INT UNSIGNED NOT NULL,
                 `grade`       INT          NOT NULL,
                 `name`        VARCHAR(48)  NOT NULL,
                 `permissions` LONGTEXT     NOT NULL,
                 PRIMARY KEY (`company_id`, `grade`),
                 CONSTRAINT `fk_company_ranks_company` FOREIGN KEY (`company_id`)
-                    REFERENCES `cipher_trucking_companies` (`id`) ON DELETE CASCADE
+                    REFERENCES `xs_trucking_companies` (`id`) ON DELETE CASCADE
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         ]],
     },
     {
-        name = 'cipher_trucking_company_members',
+        name = 'xs_trucking_company_members',
         sql = [[
-            CREATE TABLE IF NOT EXISTS `cipher_trucking_company_members` (
+            CREATE TABLE IF NOT EXISTS `xs_trucking_company_members` (
                 `company_id` INT UNSIGNED NOT NULL,
                 `citizenid`  VARCHAR(64)  NOT NULL,
                 `name`       VARCHAR(96)  NOT NULL DEFAULT '',
@@ -216,27 +216,27 @@ local TABLES = {
                 PRIMARY KEY (`citizenid`),
                 KEY `idx_company` (`company_id`),
                 CONSTRAINT `fk_company_members_company` FOREIGN KEY (`company_id`)
-                    REFERENCES `cipher_trucking_companies` (`id`) ON DELETE CASCADE
+                    REFERENCES `xs_trucking_companies` (`id`) ON DELETE CASCADE
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         ]],
     },
     {
-        name = 'cipher_trucking_company_perks',
+        name = 'xs_trucking_company_perks',
         sql = [[
-            CREATE TABLE IF NOT EXISTS `cipher_trucking_company_perks` (
+            CREATE TABLE IF NOT EXISTS `xs_trucking_company_perks` (
                 `company_id` INT UNSIGNED NOT NULL,
                 `perk_id`    VARCHAR(48)  NOT NULL,
                 `bought_at`  TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 PRIMARY KEY (`company_id`, `perk_id`),
                 CONSTRAINT `fk_company_perks_company` FOREIGN KEY (`company_id`)
-                    REFERENCES `cipher_trucking_companies` (`id`) ON DELETE CASCADE
+                    REFERENCES `xs_trucking_companies` (`id`) ON DELETE CASCADE
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         ]],
     },
     {
-        name = 'cipher_trucking_company_ledger',
+        name = 'xs_trucking_company_ledger',
         sql = [[
-            CREATE TABLE IF NOT EXISTS `cipher_trucking_company_ledger` (
+            CREATE TABLE IF NOT EXISTS `xs_trucking_company_ledger` (
                 `id`         INT UNSIGNED NOT NULL AUTO_INCREMENT,
                 `company_id` INT UNSIGNED NOT NULL,
                 `citizenid`  VARCHAR(64)  NOT NULL DEFAULT '',
@@ -247,7 +247,7 @@ local TABLES = {
                 PRIMARY KEY (`id`),
                 KEY `idx_company` (`company_id`),
                 CONSTRAINT `fk_company_ledger_company` FOREIGN KEY (`company_id`)
-                    REFERENCES `cipher_trucking_companies` (`id`) ON DELETE CASCADE
+                    REFERENCES `xs_trucking_companies` (`id`) ON DELETE CASCADE
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         ]],
     },
@@ -260,30 +260,30 @@ local TABLES = {
 -- it needs MySQL 8.0.29+ / MariaDB 10.5+, and silently erroring on older
 -- builds is exactly the kind of half-migration this file exists to avoid.
 local MIGRATIONS = {
-    { table = 'cipher_trucking_stats', column = 'rating_sum',
-      sql = 'ALTER TABLE `cipher_trucking_stats` ADD COLUMN `rating_sum` INT NOT NULL DEFAULT 0' },
+    { table = 'xs_trucking_stats', column = 'rating_sum',
+      sql = 'ALTER TABLE `xs_trucking_stats` ADD COLUMN `rating_sum` INT NOT NULL DEFAULT 0' },
 
-    { table = 'cipher_trucking_owned', column = 'company_id',
-      sql = 'ALTER TABLE `cipher_trucking_owned` ADD COLUMN `company_id` INT UNSIGNED NULL' },
-    { table = 'cipher_trucking_owned', column = 'kind',
-      sql = 'ALTER TABLE `cipher_trucking_owned` ADD COLUMN `kind` VARCHAR(16) NOT NULL DEFAULT \'truck\'' },
-    { table = 'cipher_trucking_owned', column = 'dispatch_ready_at',
-      sql = 'ALTER TABLE `cipher_trucking_owned` ADD COLUMN `dispatch_ready_at` BIGINT NULL' },
-    { table = 'cipher_trucking_owned', column = 'dispatch_contract_id',
-      sql = 'ALTER TABLE `cipher_trucking_owned` ADD COLUMN `dispatch_contract_id` VARCHAR(64) NULL' },
-    { table = 'cipher_trucking_owned', column = 'dispatch_payout',
-      sql = 'ALTER TABLE `cipher_trucking_owned` ADD COLUMN `dispatch_payout` INT NULL' },
-    { table = 'cipher_trucking_owned', column = 'upgrades',
-      sql = 'ALTER TABLE `cipher_trucking_owned` ADD COLUMN `upgrades` LONGTEXT NULL' },
-    { table = 'cipher_trucking_owned', column = 'livery',
-      sql = 'ALTER TABLE `cipher_trucking_owned` ADD COLUMN `livery` LONGTEXT NULL' },
-    { table = 'cipher_trucking_owned', column = 'maintenance',
-      sql = 'ALTER TABLE `cipher_trucking_owned` ADD COLUMN `maintenance` LONGTEXT NULL' },
+    { table = 'xs_trucking_owned', column = 'company_id',
+      sql = 'ALTER TABLE `xs_trucking_owned` ADD COLUMN `company_id` INT UNSIGNED NULL' },
+    { table = 'xs_trucking_owned', column = 'kind',
+      sql = 'ALTER TABLE `xs_trucking_owned` ADD COLUMN `kind` VARCHAR(16) NOT NULL DEFAULT \'truck\'' },
+    { table = 'xs_trucking_owned', column = 'dispatch_ready_at',
+      sql = 'ALTER TABLE `xs_trucking_owned` ADD COLUMN `dispatch_ready_at` BIGINT NULL' },
+    { table = 'xs_trucking_owned', column = 'dispatch_contract_id',
+      sql = 'ALTER TABLE `xs_trucking_owned` ADD COLUMN `dispatch_contract_id` VARCHAR(64) NULL' },
+    { table = 'xs_trucking_owned', column = 'dispatch_payout',
+      sql = 'ALTER TABLE `xs_trucking_owned` ADD COLUMN `dispatch_payout` INT NULL' },
+    { table = 'xs_trucking_owned', column = 'upgrades',
+      sql = 'ALTER TABLE `xs_trucking_owned` ADD COLUMN `upgrades` LONGTEXT NULL' },
+    { table = 'xs_trucking_owned', column = 'livery',
+      sql = 'ALTER TABLE `xs_trucking_owned` ADD COLUMN `livery` LONGTEXT NULL' },
+    { table = 'xs_trucking_owned', column = 'maintenance',
+      sql = 'ALTER TABLE `xs_trucking_owned` ADD COLUMN `maintenance` LONGTEXT NULL' },
 
-    { table = 'cipher_trucking_companies', column = 'perk_points',
-      sql = 'ALTER TABLE `cipher_trucking_companies` ADD COLUMN `perk_points` INT NOT NULL DEFAULT 0' },
-    { table = 'cipher_trucking_companies', column = 'total_deliveries',
-      sql = 'ALTER TABLE `cipher_trucking_companies` ADD COLUMN `total_deliveries` INT NOT NULL DEFAULT 0' },
+    { table = 'xs_trucking_companies', column = 'perk_points',
+      sql = 'ALTER TABLE `xs_trucking_companies` ADD COLUMN `perk_points` INT NOT NULL DEFAULT 0' },
+    { table = 'xs_trucking_companies', column = 'total_deliveries',
+      sql = 'ALTER TABLE `xs_trucking_companies` ADD COLUMN `total_deliveries` INT NOT NULL DEFAULT 0' },
 }
 
 -- Returns true / false / nil, where nil means "couldn't determine". A nil
@@ -328,7 +328,7 @@ CreateThread(function()
         waited = waited + 200
         if waited >= 30000 then
             DBFailed = true
-            logError('oxmysql never started — cipher-trucking cannot run. Check your server.cfg ensure order.')
+            logError('oxmysql never started — XS-Trucking cannot run. Check your server.cfg ensure order.')
             return
         end
     end
@@ -344,7 +344,7 @@ CreateThread(function()
 
     if not connected then
         DBFailed = true
-        logError('could not reach the database after 10s. cipher-trucking will not function until this is fixed.')
+        logError('could not reach the database after 10s. XS-Trucking will not function until this is fixed.')
         return
     end
 

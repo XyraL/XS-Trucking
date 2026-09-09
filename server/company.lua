@@ -1,8 +1,8 @@
 -- ─────────────────────────────────────────────────────────────
 -- Companies
 -- Player-founded (see Config.Trucking.Company.foundingCost), structurally
--- parallel to cipher's gang system (server/gangs.lua + bank.lua +
--- notoriety.lua in the `cipher` resource) — ranks/permissions, a treasury
+-- parallel to XS-CriminalTablet's gang system (server/gangs.lua + bank.lua +
+-- notoriety.lua in the `XS-CriminalTablet` resource) — ranks/permissions, a treasury
 -- with a ledger, invite/kick/promote membership, tiered reputation. Same
 -- patterns, renamed, kept in one file since this system is smaller.
 -- ─────────────────────────────────────────────────────────────
@@ -15,7 +15,7 @@ local function timed(label, fn, ...)
     if not Config.Debug then return fn(...) end
     local startedAt = GetGameTimer()
     local result = { fn(...) }
-    print(('^3[cipher-trucking]^0 %s took %dms'):format(label, GetGameTimer() - startedAt))
+    print(('^3[XS-Trucking]^0 %s took %dms'):format(label, GetGameTimer() - startedAt))
     return table.unpack(result)
 end
 
@@ -25,7 +25,7 @@ local pendingInvites = {}   -- [targetSrc] = { companyId, from, company }
 
 -- ── Loaders ──────────────────────────────────────────────────
 local function loadRanks(companyId)
-    local rows = MySQL.query.await('SELECT * FROM cipher_trucking_company_ranks WHERE company_id = ?', { companyId })
+    local rows = MySQL.query.await('SELECT * FROM xs_trucking_company_ranks WHERE company_id = ?', { companyId })
     local ranks = {}
     for _, r in ipairs(rows or {}) do
         local perms = r.permissions
@@ -38,7 +38,7 @@ local function loadRanks(companyId)
 end
 
 local function loadMembers(companyId)
-    local rows = MySQL.query.await('SELECT * FROM cipher_trucking_company_members WHERE company_id = ?', { companyId })
+    local rows = MySQL.query.await('SELECT * FROM xs_trucking_company_members WHERE company_id = ?', { companyId })
     local members = {}
     for _, m in ipairs(rows or {}) do
         members[m.citizenid] = m
@@ -47,7 +47,7 @@ local function loadMembers(companyId)
 end
 
 local function loadCompany(companyId)
-    local row = MySQL.single.await('SELECT * FROM cipher_trucking_companies WHERE id = ?', { companyId })
+    local row = MySQL.single.await('SELECT * FROM xs_trucking_companies WHERE id = ?', { companyId })
     if not row then return nil end
     row.ranks = loadRanks(companyId)
     row.members = loadMembers(companyId)
@@ -76,7 +76,7 @@ function Company.GetByCitizen(cid)
     if not WaitForDB() then return nil end
 
     local row = timed('GetByCitizen membership lookup', MySQL.single.await,
-        'SELECT company_id FROM cipher_trucking_company_members WHERE citizenid = ?', { cid })
+        'SELECT company_id FROM xs_trucking_company_members WHERE citizenid = ?', { cid })
     if row then return loadCompany(row.company_id) end
     return nil
 end
@@ -115,7 +115,7 @@ function Company.Found(src, name)
     if not cid then return false, 'No character loaded.' end
     if Company.GetByCitizen(cid) then return false, 'You are already in a company.' end
 
-    local existing = MySQL.single.await('SELECT id FROM cipher_trucking_companies WHERE name = ?', { name })
+    local existing = MySQL.single.await('SELECT id FROM xs_trucking_companies WHERE name = ?', { name })
     if existing then return false, 'That company name is taken.' end
 
     local cfg = Config.Trucking.Company
@@ -123,11 +123,11 @@ function Company.Found(src, name)
     if Framework.GetMoney(src, cfg.account) < foundingCost then
         return false, ('Founding a company costs $%d.'):format(foundingCost)
     end
-    local paid = Framework.RemoveMoney(src, cfg.account, foundingCost, 'cipher-trucking:foundCompany')
+    local paid = Framework.RemoveMoney(src, cfg.account, foundingCost, 'XS-Trucking:foundCompany')
     if not paid then return false, 'Payment failed.' end
 
     local companyId = MySQL.insert.await(
-        'INSERT INTO cipher_trucking_companies (name, label, owner) VALUES (?, ?, ?)',
+        'INSERT INTO xs_trucking_companies (name, label, owner) VALUES (?, ?, ?)',
         { name, name, cid })
 
     local topGrade = 0
@@ -143,11 +143,11 @@ function Company.Found(src, name)
     -- below awaits its insert.
     for grade, def in pairs(cfg.DefaultRanks) do
         local perms = def.permissions == '*' and '*' or json.encode(def.permissions)
-        MySQL.insert.await('INSERT INTO cipher_trucking_company_ranks (company_id, grade, name, permissions) VALUES (?, ?, ?, ?)',
+        MySQL.insert.await('INSERT INTO xs_trucking_company_ranks (company_id, grade, name, permissions) VALUES (?, ?, ?, ?)',
             { companyId, grade, def.name, perms })
     end
 
-    MySQL.insert.await('INSERT INTO cipher_trucking_company_members (company_id, citizenid, name, grade) VALUES (?, ?, ?, ?)',
+    MySQL.insert.await('INSERT INTO xs_trucking_company_members (company_id, citizenid, name, grade) VALUES (?, ?, ?, ?)',
         { companyId, cid, Framework.GetName(src) or cid, topGrade })
 
     loadCompany(companyId)
@@ -167,7 +167,7 @@ function Company.Invite(src, targetSrc)
     if Company.GetByCitizen(targetCid) then return false, 'That player is already in a company.' end
 
     pendingInvites[targetSrc] = { companyId = company.id, from = Framework.GetName(src), company = company.label }
-    TriggerClientEvent('cipher-trucking:client:companyInvite', targetSrc,
+    TriggerClientEvent('XS-Trucking:client:companyInvite', targetSrc,
         { company = company.label, from = pendingInvites[targetSrc].from })
     Framework.Notify(src, 'Invite sent.', 'success')
     return true
@@ -185,7 +185,7 @@ function Company.AcceptInvite(src)
     -- Awaited for the same reason as Company.Found — loadCompany reads this
     -- row straight back, and losing the race leaves the joiner missing from
     -- the cached roster.
-    MySQL.insert.await('INSERT INTO cipher_trucking_company_members (company_id, citizenid, name, grade) VALUES (?, ?, ?, 0)',
+    MySQL.insert.await('INSERT INTO xs_trucking_company_members (company_id, citizenid, name, grade) VALUES (?, ?, ?, 0)',
         { invite.companyId, cid, Framework.GetName(src) or cid })
 
     loadCompany(invite.companyId)
@@ -202,7 +202,7 @@ function Company.Kick(src, targetCid)
     -- Scoped to this company as well as the citizenid — the membership table
     -- keys on citizenid alone, so an unscoped write here would be trusting
     -- that invariant to hold rather than enforcing it.
-    MySQL.update('DELETE FROM cipher_trucking_company_members WHERE citizenid = ? AND company_id = ?',
+    MySQL.update('DELETE FROM xs_trucking_company_members WHERE citizenid = ? AND company_id = ?',
         { targetCid, company.id })
     company.members[targetCid] = nil
     citizenToCompany[targetCid] = nil
@@ -216,7 +216,7 @@ function Company.SetGrade(src, targetCid, grade)
     if not company.ranks[grade] then return false, 'Invalid rank.' end
     if company.owner == targetCid then return false, "Cannot change the Owner's rank." end
 
-    MySQL.update('UPDATE cipher_trucking_company_members SET grade = ? WHERE citizenid = ? AND company_id = ?',
+    MySQL.update('UPDATE xs_trucking_company_members SET grade = ? WHERE citizenid = ? AND company_id = ?',
         { grade, targetCid, company.id })
     company.members[targetCid].grade = grade
     return true
@@ -224,7 +224,7 @@ end
 
 -- ── Treasury ─────────────────────────────────────────────────
 local function logLedger(companyId, src, kind, amount)
-    MySQL.insert('INSERT INTO cipher_trucking_company_ledger (company_id, citizenid, name, kind, amount) VALUES (?, ?, ?, ?, ?)',
+    MySQL.insert('INSERT INTO xs_trucking_company_ledger (company_id, citizenid, name, kind, amount) VALUES (?, ?, ?, ?, ?)',
         { companyId, src and Framework.GetCitizenId(src) or '', src and Framework.GetName(src) or 'System', kind, amount })
 end
 
@@ -235,14 +235,14 @@ function Company.Deposit(src, amount)
     if not company then return false, 'No company.' end
     if Framework.GetMoney(src, Config.Trucking.Company.account) < amount then return false, 'Not enough money.' end
 
-    Framework.RemoveMoney(src, Config.Trucking.Company.account, amount, 'cipher-trucking:companyDeposit')
+    Framework.RemoveMoney(src, Config.Trucking.Company.account, amount, 'XS-Trucking:companyDeposit')
 
     -- Treasury perk branch: deposits go in for a bonus over what was paid in.
     local mods = Company.ModifiersFor(company.id)
     local credited = amount + math.floor(amount * (mods.depositBonusPct / 100))
 
     company.bank = company.bank + credited
-    MySQL.update('UPDATE cipher_trucking_companies SET bank = bank + ? WHERE id = ?', { credited, company.id })
+    MySQL.update('UPDATE xs_trucking_companies SET bank = bank + ? WHERE id = ?', { credited, company.id })
     logLedger(company.id, src, 'deposit', credited)
     return true, company.bank
 end
@@ -256,8 +256,8 @@ function Company.Withdraw(src, amount)
     if company.bank < amount then return false, 'Treasury balance too low.' end
 
     company.bank = company.bank - amount
-    MySQL.update('UPDATE cipher_trucking_companies SET bank = bank - ? WHERE id = ?', { amount, company.id })
-    Framework.AddMoney(src, Config.Trucking.Company.account, amount, 'cipher-trucking:companyWithdraw')
+    MySQL.update('UPDATE xs_trucking_companies SET bank = bank - ? WHERE id = ?', { amount, company.id })
+    Framework.AddMoney(src, Config.Trucking.Company.account, amount, 'XS-Trucking:companyWithdraw')
     logLedger(company.id, src, 'withdraw', amount)
     return true, company.bank
 end
@@ -268,14 +268,14 @@ function Company.CreditTreasury(companyId, amount, reason)
     local company = Company.Get(companyId)
     if not company then return end
     company.bank = company.bank + amount
-    MySQL.update('UPDATE cipher_trucking_companies SET bank = bank + ? WHERE id = ?', { amount, companyId })
-    MySQL.insert('INSERT INTO cipher_trucking_company_ledger (company_id, citizenid, name, kind, amount) VALUES (?, ?, ?, ?, ?)',
+    MySQL.update('UPDATE xs_trucking_companies SET bank = bank + ? WHERE id = ?', { amount, companyId })
+    MySQL.insert('INSERT INTO xs_trucking_company_ledger (company_id, citizenid, name, kind, amount) VALUES (?, ?, ?, ?, ?)',
         { companyId, '', reason or 'income', 'income', amount })
 end
 
 function Company.GetLedger(companyId)
     return MySQL.query.await(
-        'SELECT name, kind, amount, created_at FROM cipher_trucking_company_ledger WHERE company_id = ? ORDER BY id DESC LIMIT ?',
+        'SELECT name, kind, amount, created_at FROM xs_trucking_company_ledger WHERE company_id = ? ORDER BY id DESC LIMIT ?',
         { companyId, Config.Trucking.Company.ledgerLimit }) or {}
 end
 
@@ -290,7 +290,7 @@ end
 
 -- Awards perk_points for EVERY level threshold crossed between the old and
 -- new reputation (not just the final level landed on) — same logic shape
--- as cipher's gang notoriety perk-point award.
+-- as XS-CriminalTablet's gang notoriety perk-point award.
 function Company.AddReputation(companyId, amount)
     local company = Company.Get(companyId)
     if not company then return end
@@ -309,7 +309,7 @@ function Company.AddReputation(companyId, amount)
     end
 
     company.perk_points = (company.perk_points or 0) + perkPointsGained
-    MySQL.update('UPDATE cipher_trucking_companies SET reputation = ?, perk_points = perk_points + ? WHERE id = ?',
+    MySQL.update('UPDATE xs_trucking_companies SET reputation = ?, perk_points = perk_points + ? WHERE id = ?',
         { company.reputation, perkPointsGained, companyId })
 end
 
@@ -324,7 +324,7 @@ local function findPerkTier(perkId)
 end
 
 local function ownedPerkIds(companyId)
-    local rows = MySQL.query.await('SELECT perk_id FROM cipher_trucking_company_perks WHERE company_id = ?', { companyId }) or {}
+    local rows = MySQL.query.await('SELECT perk_id FROM xs_trucking_company_perks WHERE company_id = ?', { companyId }) or {}
     local owned = {}
     for _, r in ipairs(rows) do owned[r.perk_id] = true end
     return owned
@@ -367,8 +367,8 @@ function Company.BuyPerk(src, perkId)
     if (company.perk_points or 0) < tier.cost then return false, 'Not enough perk points.' end
 
     company.perk_points = company.perk_points - tier.cost
-    MySQL.update('UPDATE cipher_trucking_companies SET perk_points = perk_points - ? WHERE id = ?', { tier.cost, company.id })
-    MySQL.insert('INSERT INTO cipher_trucking_company_perks (company_id, perk_id) VALUES (?, ?)', { company.id, perkId })
+    MySQL.update('UPDATE xs_trucking_companies SET perk_points = perk_points - ? WHERE id = ?', { tier.cost, company.id })
+    MySQL.insert('INSERT INTO xs_trucking_company_perks (company_id, perk_id) VALUES (?, ?)', { company.id, perkId })
 
     Framework.Notify(src, ('Unlocked %s.'):format(tier.label), 'success')
     return true
@@ -377,7 +377,7 @@ end
 -- ── Fleet ────────────────────────────────────────────────────
 function Company.ListFleet(companyId)
     local rows = MySQL.query.await(
-        'SELECT * FROM cipher_trucking_owned WHERE company_id = ? ORDER BY purchased_at ASC', { companyId }) or {}
+        'SELECT * FROM xs_trucking_owned WHERE company_id = ? ORDER BY purchased_at ASC', { companyId }) or {}
 
     -- Decoded here for the same reason as the personal garage — the Fleet
     -- view renders the identical gauges and should read the identical shape.
@@ -404,12 +404,12 @@ function Company.BuyVehicle(src, shopId)
     if company.bank < shopDef.price then return false, 'Company treasury too low.' end
 
     company.bank = company.bank - shopDef.price
-    MySQL.update('UPDATE cipher_trucking_companies SET bank = bank - ? WHERE id = ?', { shopDef.price, company.id })
+    MySQL.update('UPDATE xs_trucking_companies SET bank = bank - ? WHERE id = ?', { shopDef.price, company.id })
     logLedger(company.id, src, 'purchase', shopDef.price)
 
     local cid = Framework.GetCitizenId(src)
     MySQL.insert(
-        'INSERT INTO cipher_trucking_owned (citizenid, company_id, kind, model, label, `condition`) VALUES (?, ?, ?, ?, ?, 100)',
+        'INSERT INTO xs_trucking_owned (citizenid, company_id, kind, model, label, `condition`) VALUES (?, ?, ?, ?, ?, 100)',
         { cid, company.id, shopDef.kind or 'truck', shopDef.model, shopDef.label })
 
     Framework.Notify(src, ('Company purchased %s.'):format(shopDef.label), 'success')
@@ -425,7 +425,7 @@ function Company.Dispatch(src, ownedId, contractId)
     local cid = Framework.GetCitizenId(src)
     if not cid then return false, 'No character loaded.' end
 
-    local owned = MySQL.single.await('SELECT * FROM cipher_trucking_owned WHERE id = ?', { ownedId })
+    local owned = MySQL.single.await('SELECT * FROM xs_trucking_owned WHERE id = ?', { ownedId })
     if not owned then return false, 'Vehicle not found.' end
     if owned.kind ~= 'truck' then return false, 'Only trucks can be dispatched.' end
     if owned.dispatch_ready_at then return false, 'Already out on a run.' end
@@ -446,7 +446,7 @@ function Company.Dispatch(src, ownedId, contractId)
     local ownerClause = owned.company_id and 'company_id = ?' or 'citizenid = ? AND company_id IS NULL'
     local ownerParam = owned.company_id or cid
     local activeCount = MySQL.scalar.await(
-        ('SELECT COUNT(*) FROM cipher_trucking_owned WHERE %s AND dispatch_ready_at IS NOT NULL'):format(ownerClause),
+        ('SELECT COUNT(*) FROM xs_trucking_owned WHERE %s AND dispatch_ready_at IS NOT NULL'):format(ownerClause),
         { ownerParam })
     if (activeCount or 0) >= (SGet('dispatch.maxConcurrent', Config.Trucking.Company.maxConcurrentDispatches) + mods.maxDispatchBonus) then
         return false, 'Too many trucks already out on runs.'
@@ -464,7 +464,7 @@ function Company.Dispatch(src, ownedId, contractId)
     local readyAt = (os.time() * 1000) + math.floor(minutes * 60000)
 
     MySQL.update(
-        'UPDATE cipher_trucking_owned SET dispatch_ready_at = ?, dispatch_contract_id = ?, dispatch_payout = ? WHERE id = ?',
+        'UPDATE xs_trucking_owned SET dispatch_ready_at = ?, dispatch_contract_id = ?, dispatch_payout = ? WHERE id = ?',
         { readyAt, def.id, payout, ownedId })
 
     Framework.Notify(src, ('%s dispatched — ready in %d minutes.'):format(owned.label, math.floor(minutes)), 'success')
@@ -475,7 +475,7 @@ function Company.Collect(src, ownedId)
     local cid = Framework.GetCitizenId(src)
     if not cid then return false, 'No character loaded.' end
 
-    local owned = MySQL.single.await('SELECT * FROM cipher_trucking_owned WHERE id = ?', { ownedId })
+    local owned = MySQL.single.await('SELECT * FROM xs_trucking_owned WHERE id = ?', { ownedId })
     if not owned then return false, 'Vehicle not found.' end
     if not owned.dispatch_ready_at then return false, 'That truck is not out on a run.' end
 
@@ -492,15 +492,15 @@ function Company.Collect(src, ownedId)
     local payout = owned.dispatch_payout or 0
 
     MySQL.update(
-        'UPDATE cipher_trucking_owned SET dispatch_ready_at = NULL, dispatch_contract_id = NULL, dispatch_payout = NULL WHERE id = ?',
+        'UPDATE xs_trucking_owned SET dispatch_ready_at = NULL, dispatch_contract_id = NULL, dispatch_payout = NULL WHERE id = ?',
         { ownedId })
 
     if owned.company_id then
         Company.CreditTreasury(owned.company_id, payout, 'dispatch:' .. (owned.dispatch_contract_id or ''))
         Company.AddReputation(owned.company_id, 10)
-        MySQL.update('UPDATE cipher_trucking_companies SET total_deliveries = total_deliveries + 1 WHERE id = ?', { owned.company_id })
+        MySQL.update('UPDATE xs_trucking_companies SET total_deliveries = total_deliveries + 1 WHERE id = ?', { owned.company_id })
     else
-        Framework.AddMoney(src, Config.Trucking.payoutAccount, payout, 'cipher-trucking:dispatch')
+        Framework.AddMoney(src, Config.Trucking.payoutAccount, payout, 'XS-Trucking:dispatch')
     end
 
     Framework.Notify(src, ('Collected $%d from the dispatch run.'):format(payout), 'success')
@@ -541,8 +541,8 @@ end
 -- Global on the Company table (not local) so server/admin.lua's
 -- force-disband can call the exact same logic on any company by id.
 function Company.DisbandById(companyId)
-    MySQL.update('UPDATE cipher_trucking_owned SET company_id = NULL WHERE company_id = ?', { companyId })
-    MySQL.update('DELETE FROM cipher_trucking_companies WHERE id = ?', { companyId })
+    MySQL.update('UPDATE xs_trucking_owned SET company_id = NULL WHERE company_id = ?', { companyId })
+    MySQL.update('DELETE FROM xs_trucking_companies WHERE id = ?', { companyId })
 
     for cid, id in pairs(citizenToCompany) do
         if id == companyId then citizenToCompany[cid] = nil end
@@ -651,53 +651,53 @@ local function safeCall(label, fn, ...)
     local ok = results[1]
 
     if Config.Debug then
-        print(('^3[cipher-trucking]^0 %s total: %dms'):format(label, GetGameTimer() - startedAt))
+        print(('^3[XS-Trucking]^0 %s total: %dms'):format(label, GetGameTimer() - startedAt))
     end
 
     if not ok then
         if Config.Debug then
-            print(('^1[cipher-trucking]^0 %s error: %s'):format(label, tostring(results[2])))
+            print(('^1[XS-Trucking]^0 %s error: %s'):format(label, tostring(results[2])))
         else
-            print(('^1[cipher-trucking]^0 %s failed — enable Config.Debug for the full error.'):format(label))
+            print(('^1[XS-Trucking]^0 %s failed — enable Config.Debug for the full error.'):format(label))
         end
         return nil
     end
     return table.unpack(results, 2)
 end
 
-lib.callback.register('cipher-trucking:server:getCompany', function(src)
+lib.callback.register('XS-Trucking:server:getCompany', function(src)
     return safeCall('getCompany', Company.GetSnapshot, src)
 end)
 
-lib.callback.register('cipher-trucking:server:foundCompany', function(src, name)
+lib.callback.register('XS-Trucking:server:foundCompany', function(src, name)
     return safeCall('foundCompany', Company.Found, src, name)
 end)
 
-lib.callback.register('cipher-trucking:server:companyInvite', function(src, targetSrc)
+lib.callback.register('XS-Trucking:server:companyInvite', function(src, targetSrc)
     return safeCall('companyInvite', Company.Invite, src, targetSrc)
 end)
 
-lib.callback.register('cipher-trucking:server:companyAcceptInvite', function(src)
+lib.callback.register('XS-Trucking:server:companyAcceptInvite', function(src)
     return safeCall('companyAcceptInvite', Company.AcceptInvite, src)
 end)
 
-lib.callback.register('cipher-trucking:server:companyKick', function(src, targetCid)
+lib.callback.register('XS-Trucking:server:companyKick', function(src, targetCid)
     return safeCall('companyKick', Company.Kick, src, targetCid)
 end)
 
-lib.callback.register('cipher-trucking:server:companySetGrade', function(src, targetCid, grade)
+lib.callback.register('XS-Trucking:server:companySetGrade', function(src, targetCid, grade)
     return safeCall('companySetGrade', Company.SetGrade, src, targetCid, tonumber(grade))
 end)
 
-lib.callback.register('cipher-trucking:server:companyDeposit', function(src, amount)
+lib.callback.register('XS-Trucking:server:companyDeposit', function(src, amount)
     return safeCall('companyDeposit', Company.Deposit, src, amount)
 end)
 
-lib.callback.register('cipher-trucking:server:companyWithdraw', function(src, amount)
+lib.callback.register('XS-Trucking:server:companyWithdraw', function(src, amount)
     return safeCall('companyWithdraw', Company.Withdraw, src, amount)
 end)
 
-lib.callback.register('cipher-trucking:server:companyGetLedger', function(src)
+lib.callback.register('XS-Trucking:server:companyGetLedger', function(src)
     return safeCall('companyGetLedger', function()
         local company = Company.GetBySource(src)
         if not company then return {} end
@@ -705,31 +705,31 @@ lib.callback.register('cipher-trucking:server:companyGetLedger', function(src)
     end)
 end)
 
-lib.callback.register('cipher-trucking:server:companyBuyVehicle', function(src, shopId)
+lib.callback.register('XS-Trucking:server:companyBuyVehicle', function(src, shopId)
     return safeCall('companyBuyVehicle', Company.BuyVehicle, src, shopId)
 end)
 
-lib.callback.register('cipher-trucking:server:companyBuyPerk', function(src, perkId)
+lib.callback.register('XS-Trucking:server:companyBuyPerk', function(src, perkId)
     return safeCall('companyBuyPerk', Company.BuyPerk, src, perkId)
 end)
 
-lib.callback.register('cipher-trucking:server:getCompanyLeaderboard', function(src)
+lib.callback.register('XS-Trucking:server:getCompanyLeaderboard', function(src)
     return safeCall('getCompanyLeaderboard', function()
         if not WaitForDB() then return {} end
         return MySQL.query.await(
-            'SELECT label, reputation, bank FROM cipher_trucking_companies ORDER BY reputation DESC LIMIT ?',
+            'SELECT label, reputation, bank FROM xs_trucking_companies ORDER BY reputation DESC LIMIT ?',
             { Config.Trucking.Company.leaderboardLimit }) or {}
     end)
 end)
 
-lib.callback.register('cipher-trucking:server:disbandCompany', function(src)
+lib.callback.register('XS-Trucking:server:disbandCompany', function(src)
     return safeCall('disbandCompany', Company.Disband, src)
 end)
 
 -- Cosmetic-only paint job — personal trucks pay from your own cash, company
 -- trucks pay from the treasury and need manage_vehicles, same ownership
 -- shape as repairVehicle/upgradeVehicle in server/main.lua.
-lib.callback.register('cipher-trucking:server:paintVehicle', function(src, ownedId, primaryId, secondaryId)
+lib.callback.register('XS-Trucking:server:paintVehicle', function(src, ownedId, primaryId, secondaryId)
     return safeCall('paintVehicle', function()
         local cid = Framework.GetCitizenId(src)
         if not cid then return false, 'No character loaded.' end
@@ -742,7 +742,7 @@ lib.callback.register('cipher-trucking:server:paintVehicle', function(src, owned
         end
         if not validColor(primaryId) or not validColor(secondaryId) then return false, 'Invalid color.' end
 
-        local owned = MySQL.single.await('SELECT * FROM cipher_trucking_owned WHERE id = ?', { ownedId })
+        local owned = MySQL.single.await('SELECT * FROM xs_trucking_owned WHERE id = ?', { ownedId })
         if not owned then return false, 'Vehicle not found.' end
         if owned.kind ~= 'truck' then return false, 'Only trucks can be painted.' end
 
@@ -754,17 +754,17 @@ lib.callback.register('cipher-trucking:server:paintVehicle', function(src, owned
             if not company or company.id ~= owned.company_id then return false, "Not your company's vehicle." end
             if company.bank < cost then return false, ('Costs $%d — treasury too low.'):format(cost) end
             company.bank = company.bank - cost
-            MySQL.update('UPDATE cipher_trucking_companies SET bank = bank - ? WHERE id = ?', { cost, company.id })
+            MySQL.update('UPDATE xs_trucking_companies SET bank = bank - ? WHERE id = ?', { cost, company.id })
         else
             if owned.citizenid ~= cid then return false, 'You do not own that truck.' end
             if Framework.GetMoney(src, Config.Trucking.payoutAccount) < cost then
                 return false, ('Costs $%d — not enough money.'):format(cost)
             end
-            local ok = Framework.RemoveMoney(src, Config.Trucking.payoutAccount, cost, 'cipher-trucking:paintVehicle')
+            local ok = Framework.RemoveMoney(src, Config.Trucking.payoutAccount, cost, 'XS-Trucking:paintVehicle')
             if not ok then return false, 'Payment failed.' end
         end
 
-        MySQL.update('UPDATE cipher_trucking_owned SET livery = ? WHERE id = ?',
+        MySQL.update('UPDATE xs_trucking_owned SET livery = ? WHERE id = ?',
             { json.encode({ primary = primaryId, secondary = secondaryId }), ownedId })
 
         Framework.Notify(src, 'Truck repainted.', 'success')
@@ -774,11 +774,11 @@ end)
 
 -- Shared dispatch/collect callbacks — used for BOTH personal and company
 -- trucks, since Company.Dispatch/Collect already branches on ownership.
-lib.callback.register('cipher-trucking:server:dispatchVehicle', function(src, ownedId, contractId)
+lib.callback.register('XS-Trucking:server:dispatchVehicle', function(src, ownedId, contractId)
     return safeCall('dispatchVehicle', Company.Dispatch, src, ownedId, contractId)
 end)
 
-lib.callback.register('cipher-trucking:server:collectVehicle', function(src, ownedId)
+lib.callback.register('XS-Trucking:server:collectVehicle', function(src, ownedId)
     return safeCall('collectVehicle', Company.Collect, src, ownedId)
 end)
 

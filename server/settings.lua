@@ -125,7 +125,7 @@ end
 function Settings.Load()
     if not WaitForDB() then return end
 
-    local rows = MySQL.query.await('SELECT `key`, `value` FROM cipher_trucking_settings') or {}
+    local rows = MySQL.query.await('SELECT `key`, `value` FROM xs_trucking_settings') or {}
     cache = {}
     for _, r in ipairs(rows) do
         local def = BY_KEY[r.key]
@@ -162,7 +162,7 @@ function Settings.Set(key, value)
 
     cache[key] = coerced
     MySQL.query.await(
-        'INSERT INTO cipher_trucking_settings (`key`, `value`) VALUES (?, ?) ON DUPLICATE KEY UPDATE `value` = VALUES(`value`)',
+        'INSERT INTO xs_trucking_settings (`key`, `value`) VALUES (?, ?) ON DUPLICATE KEY UPDATE `value` = VALUES(`value`)',
         { key, tostring(coerced) })
     return true
 end
@@ -172,13 +172,13 @@ end
 function Settings.Reset(key)
     if not BY_KEY[key] then return false, 'Unknown setting.' end
     cache[key] = nil
-    MySQL.query.await('DELETE FROM cipher_trucking_settings WHERE `key` = ?', { key })
+    MySQL.query.await('DELETE FROM xs_trucking_settings WHERE `key` = ?', { key })
     return true
 end
 
 function Settings.ResetAll()
     cache = {}
-    MySQL.query.await('DELETE FROM cipher_trucking_settings')
+    MySQL.query.await('DELETE FROM xs_trucking_settings')
     return true
 end
 
@@ -219,6 +219,6 @@ CreateThread(function()
     if Config.Debug and loaded then
         local n = 0
         for _ in pairs(cache) do n = n + 1 end
-        print(('^2[cipher-trucking]^0 settings loaded — %d override(s) active'):format(n))
+        print(('^2[XS-Trucking]^0 settings loaded — %d override(s) active'):format(n))
     end
 end)

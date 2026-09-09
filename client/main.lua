@@ -49,7 +49,7 @@ function stopPrompt()
     lib.hideTextUI()
 end
 
--- Ground marker — a flat amber cylinder matching the Cipher accent color,
+-- Ground marker — a flat amber cylinder matching the XS accent color,
 -- sized to roughly match the interaction radius so the boundary is visible.
 local function drawGroundMarker(coords, radius)
     DrawMarker(1, coords.x, coords.y, coords.z, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
@@ -57,7 +57,7 @@ local function drawGroundMarker(coords, radius)
 end
 
 -- Drive-up-and-press-E prompt (same lib.showTextUI + key-poll pattern used
--- elsewhere in the Cipher scripts). `extraCheck`, if given, must also pass
+-- elsewhere in the XS scripts). `extraCheck`, if given, must also pass
 -- for the prompt to show — used to require the trailer specifically be in
 -- the delivery zone too, not just the player/truck. Draws a ground marker
 -- at `coords` the whole time this is active, regardless of `extraCheck`, so
@@ -207,13 +207,13 @@ function giveVehicleKeys(vehicle)
     elseif resource == 'qs-vehiclekeys' then
         ok, err = pcall(function() exports['qs-vehiclekeys']:GiveKeys(plate) end)
     elseif resource == 'custom' then
-        ok, err = pcall(function() exports['cipher-trucking']:OnGiveKeys(vehicle, plate) end)
+        ok, err = pcall(function() exports['XS-Trucking']:OnGiveKeys(vehicle, plate) end)
     else
         return
     end
 
     if not ok and Config.Debug then
-        print(('^1[cipher-trucking]^0 giveVehicleKeys failed for resource "%s": %s'):format(resource, tostring(err)))
+        print(('^1[XS-Trucking]^0 giveVehicleKeys failed for resource "%s": %s'):format(resource, tostring(err)))
     end
 end
 
@@ -252,7 +252,7 @@ end
 -- server sent one back, otherwise the free depot truck) + trailer. Returns
 -- true/false so the NUI callback can report success back to the dashboard.
 function acceptContract(contractId)
-    local ok, payload = lib.callback.await('cipher-trucking:server:acceptContract', false, contractId)
+    local ok, payload = lib.callback.await('XS-Trucking:server:acceptContract', false, contractId)
     if not ok then
         lib.notify({ description = payload or 'Could not accept that contract.', type = 'error' })
         return false
@@ -268,13 +268,13 @@ function acceptContract(contractId)
     if not truckEntity then currentJob = nil return false end
     giveVehicleKeys(truckEntity)
     local truckNetId = NetworkGetNetworkIdFromEntity(truckEntity)
-    lib.callback.await('cipher-trucking:server:registerTruck', false, truckNetId)
+    lib.callback.await('XS-Trucking:server:registerTruck', false, truckNetId)
 
     local trailerModel = payload.trailerOverride and payload.trailerOverride.model or nil
     trailerEntity = spawnTrailer(payload.trailerSpawn, trailerModel)
     if not trailerEntity then clearTruck() currentJob = nil return false end
     local trailerNetId = NetworkGetNetworkIdFromEntity(trailerEntity)
-    lib.callback.await('cipher-trucking:server:registerTrailer', false, trailerNetId)
+    lib.callback.await('XS-Trucking:server:registerTrailer', false, trailerNetId)
 
     -- Started after both vehicles exist — the burn loop reads truckEntity
     -- and trailerEntity directly.
@@ -320,7 +320,7 @@ function watchForHitch()
 end
 
 function doHookup()
-    local ok, err = lib.callback.await('cipher-trucking:server:doHookup', false)
+    local ok, err = lib.callback.await('XS-Trucking:server:doHookup', false)
     if not ok then
         lib.notify({ description = err or 'Could not hitch the trailer.', type = 'error' })
         return false
@@ -351,7 +351,7 @@ end
 function doDeliver()
     if deliverBusy then return end
     deliverBusy = true
-    local ok, result = lib.callback.await('cipher-trucking:server:doDeliver', false)
+    local ok, result = lib.callback.await('XS-Trucking:server:doDeliver', false)
     deliverBusy = false
     if not ok then
         lib.notify({ description = result or 'Could not deliver here.', type = 'error' })
@@ -389,18 +389,18 @@ end
 function doReturn()
     if returnBusy then return end
     returnBusy = true
-    local ok, err = lib.callback.await('cipher-trucking:server:doReturn', false)
+    local ok, err = lib.callback.await('XS-Trucking:server:doReturn', false)
     returnBusy = false
     if not ok then
         lib.notify({ description = err or 'Could not return here.', type = 'error' })
         return
     end
     stopPrompt()
-    -- server fires cipher-trucking:client:cleanupVehicles on success, which
+    -- server fires XS-Trucking:client:cleanupVehicles on success, which
     -- tears everything down — nothing else to do here.
 end
 
-RegisterNetEvent('cipher-trucking:client:cleanupVehicles', function()
+RegisterNetEvent('XS-Trucking:client:cleanupVehicles', function()
     -- Flushed before the vehicles go away, so the last few percent of the
     -- tank is persisted rather than lost with the entity.
     if Fuel then Fuel.Stop() end
@@ -417,7 +417,7 @@ end)
 
 -- Defined here rather than in fuel.lua because the HUD thread below runs
 -- from resource start, before fuel.lua has necessarily fetched its config.
-function cipherFuelLow()
+function xsFuelLow()
     if not Fuel or not Fuel.active then return false end
     local warn = Config.Trucking.Maintenance
         and Config.Trucking.Maintenance.Fuel
@@ -446,7 +446,7 @@ CreateThread(function()
                     -- nil when maintenance is disabled, which hides the
                     -- gauge rather than showing a permanently full tank.
                     fuel = (Fuel and Fuel.active) and Fuel.level or nil,
-                    fuelLow = (Fuel and Fuel.active and cipherFuelLow()) or false,
+                    fuelLow = (Fuel and Fuel.active and xsFuelLow()) or false,
                 },
             })
             shown = true
@@ -504,11 +504,11 @@ RegisterNUICallback('getMapMeta', function(_, cb)
 end)
 
 RegisterNUICallback('getAnalytics', function(_, cb)
-    cb(lib.callback.await('cipher-trucking:server:getAnalytics', false))
+    cb(lib.callback.await('XS-Trucking:server:getAnalytics', false))
 end)
 
 RegisterNUICallback('getHistory', function(_, cb)
-    cb(lib.callback.await('cipher-trucking:server:getHistory', false) or {})
+    cb(lib.callback.await('XS-Trucking:server:getHistory', false) or {})
 end)
 
 -- Streams the player's own position to the Map tab so the "you are here"
@@ -535,7 +535,7 @@ CreateThread(function()
 end)
 
 RegisterNUICallback('getContracts', function(_, cb)
-    cb(lib.callback.await('cipher-trucking:server:getContracts', false) or {})
+    cb(lib.callback.await('XS-Trucking:server:getContracts', false) or {})
 end)
 
 RegisterNUICallback('acceptContract', function(data, cb)
@@ -544,120 +544,120 @@ RegisterNUICallback('acceptContract', function(data, cb)
 end)
 
 RegisterNUICallback('getCareer', function(_, cb)
-    cb(lib.callback.await('cipher-trucking:server:getCareer', false))
+    cb(lib.callback.await('XS-Trucking:server:getCareer', false))
 end)
 
 RegisterNUICallback('getActiveJob', function(_, cb)
-    cb(lib.callback.await('cipher-trucking:server:getActiveJob', false))
+    cb(lib.callback.await('XS-Trucking:server:getActiveJob', false))
 end)
 
 RegisterNUICallback('getLeaderboard', function(_, cb)
-    cb(lib.callback.await('cipher-trucking:server:getLeaderboard', false) or {})
+    cb(lib.callback.await('XS-Trucking:server:getLeaderboard', false) or {})
 end)
 
 RegisterNUICallback('getGarage', function(_, cb)
-    cb(lib.callback.await('cipher-trucking:server:getGarage', false))
+    cb(lib.callback.await('XS-Trucking:server:getGarage', false))
 end)
 
 RegisterNUICallback('buyVehicle', function(data, cb)
-    local ok, err = lib.callback.await('cipher-trucking:server:buyVehicle', false, data.shopId)
+    local ok, err = lib.callback.await('XS-Trucking:server:buyVehicle', false, data.shopId)
     cb({ ok = ok, message = err })
 end)
 
 RegisterNUICallback('selectTruck', function(data, cb)
-    local ok, err = lib.callback.await('cipher-trucking:server:selectTruck', false, data.ownedId)
+    local ok, err = lib.callback.await('XS-Trucking:server:selectTruck', false, data.ownedId)
     cb({ ok = ok, message = err })
 end)
 
 RegisterNUICallback('selectTrailer', function(data, cb)
-    local ok, err = lib.callback.await('cipher-trucking:server:selectTrailer', false, data.ownedId)
+    local ok, err = lib.callback.await('XS-Trucking:server:selectTrailer', false, data.ownedId)
     cb({ ok = ok, message = err })
 end)
 
 RegisterNUICallback('repairVehicle', function(data, cb)
-    local ok, err = lib.callback.await('cipher-trucking:server:repairVehicle', false, data.ownedId)
+    local ok, err = lib.callback.await('XS-Trucking:server:repairVehicle', false, data.ownedId)
     cb({ ok = ok, message = err })
 end)
 
 RegisterNUICallback('dispatchVehicle', function(data, cb)
-    local ok, err = lib.callback.await('cipher-trucking:server:dispatchVehicle', false, data.ownedId, data.contractId)
+    local ok, err = lib.callback.await('XS-Trucking:server:dispatchVehicle', false, data.ownedId, data.contractId)
     cb({ ok = ok, message = err })
 end)
 
 RegisterNUICallback('collectVehicle', function(data, cb)
-    local ok, err = lib.callback.await('cipher-trucking:server:collectVehicle', false, data.ownedId)
+    local ok, err = lib.callback.await('XS-Trucking:server:collectVehicle', false, data.ownedId)
     cb({ ok = ok, message = err })
 end)
 
 RegisterNUICallback('upgradeVehicle', function(data, cb)
-    local ok, err = lib.callback.await('cipher-trucking:server:upgradeVehicle', false, data.ownedId, data.upgradeId)
+    local ok, err = lib.callback.await('XS-Trucking:server:upgradeVehicle', false, data.ownedId, data.upgradeId)
     cb({ ok = ok, message = err })
 end)
 
 RegisterNUICallback('getCompanyLeaderboard', function(_, cb)
-    cb(lib.callback.await('cipher-trucking:server:getCompanyLeaderboard', false) or {})
+    cb(lib.callback.await('XS-Trucking:server:getCompanyLeaderboard', false) or {})
 end)
 
 -- ── Company NUI callbacks ────────────────────────────────────
 RegisterNUICallback('getCompany', function(_, cb)
-    if Config.Debug then print('^3[cipher-trucking]^0 getCompany: NUI request received, awaiting server...') end
+    if Config.Debug then print('^3[XS-Trucking]^0 getCompany: NUI request received, awaiting server...') end
     local startedAt = GetGameTimer()
-    local result = lib.callback.await('cipher-trucking:server:getCompany', false)
-    if Config.Debug then print(('^3[cipher-trucking]^0 getCompany: server responded after %dms'):format(GetGameTimer() - startedAt)) end
+    local result = lib.callback.await('XS-Trucking:server:getCompany', false)
+    if Config.Debug then print(('^3[XS-Trucking]^0 getCompany: server responded after %dms'):format(GetGameTimer() - startedAt)) end
     cb(result)
 end)
 
 RegisterNUICallback('foundCompany', function(data, cb)
-    local ok, err = lib.callback.await('cipher-trucking:server:foundCompany', false, data.name)
+    local ok, err = lib.callback.await('XS-Trucking:server:foundCompany', false, data.name)
     cb({ ok = ok, message = err })
 end)
 
 RegisterNUICallback('companyKick', function(data, cb)
-    local ok, err = lib.callback.await('cipher-trucking:server:companyKick', false, data.citizenid)
+    local ok, err = lib.callback.await('XS-Trucking:server:companyKick', false, data.citizenid)
     cb({ ok = ok, message = err })
 end)
 
 RegisterNUICallback('companySetGrade', function(data, cb)
-    local ok, err = lib.callback.await('cipher-trucking:server:companySetGrade', false, data.citizenid, data.grade)
+    local ok, err = lib.callback.await('XS-Trucking:server:companySetGrade', false, data.citizenid, data.grade)
     cb({ ok = ok, message = err })
 end)
 
 RegisterNUICallback('companyDeposit', function(data, cb)
-    local ok, result = lib.callback.await('cipher-trucking:server:companyDeposit', false, data.amount)
+    local ok, result = lib.callback.await('XS-Trucking:server:companyDeposit', false, data.amount)
     cb({ ok = ok, balance = ok and result or nil, message = (not ok) and result or nil })
 end)
 
 RegisterNUICallback('companyWithdraw', function(data, cb)
-    local ok, result = lib.callback.await('cipher-trucking:server:companyWithdraw', false, data.amount)
+    local ok, result = lib.callback.await('XS-Trucking:server:companyWithdraw', false, data.amount)
     cb({ ok = ok, balance = ok and result or nil, message = (not ok) and result or nil })
 end)
 
 RegisterNUICallback('companyGetLedger', function(_, cb)
-    cb(lib.callback.await('cipher-trucking:server:companyGetLedger', false) or {})
+    cb(lib.callback.await('XS-Trucking:server:companyGetLedger', false) or {})
 end)
 
 RegisterNUICallback('companyBuyVehicle', function(data, cb)
-    local ok, err = lib.callback.await('cipher-trucking:server:companyBuyVehicle', false, data.shopId)
+    local ok, err = lib.callback.await('XS-Trucking:server:companyBuyVehicle', false, data.shopId)
     cb({ ok = ok, message = err })
 end)
 
 RegisterNUICallback('companyBuyPerk', function(data, cb)
-    local ok, err = lib.callback.await('cipher-trucking:server:companyBuyPerk', false, data.perkId)
+    local ok, err = lib.callback.await('XS-Trucking:server:companyBuyPerk', false, data.perkId)
     cb({ ok = ok, message = err })
 end)
 
 RegisterNUICallback('disbandCompany', function(_, cb)
-    local ok, err = lib.callback.await('cipher-trucking:server:disbandCompany', false)
+    local ok, err = lib.callback.await('XS-Trucking:server:disbandCompany', false)
     cb({ ok = ok, message = err })
 end)
 
 RegisterNUICallback('serviceVehicle', function(data, cb)
-    local ok, err = lib.callback.await('cipher-trucking:server:serviceVehicle', false, data.ownedId, data.componentId)
+    local ok, err = lib.callback.await('XS-Trucking:server:serviceVehicle', false, data.ownedId, data.componentId)
     cb({ ok = ok, message = err })
 end)
 
 RegisterNUICallback('paintVehicle', function(data, cb)
-    local ok, err = lib.callback.await('cipher-trucking:server:paintVehicle', false, data.ownedId, data.primaryId, data.secondaryId)
+    local ok, err = lib.callback.await('XS-Trucking:server:paintVehicle', false, data.ownedId, data.primaryId, data.secondaryId)
     cb({ ok = ok, message = err })
 end)
 
@@ -670,7 +670,7 @@ CreateThread(function()
         debug = Config.Debug,
         options = {
             {
-                name = 'cipher_trucking_computer',
+                name = 'xs_trucking_computer',
                 icon = 'fa-solid fa-computer',
                 label = 'Delivery Contracts',
                 distance = Config.Trucking.computerZoneDistance,

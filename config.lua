@@ -70,7 +70,7 @@ Config.Trucking.payoutAccount = 'bank'
 --                        vehicle handle — nothing else to configure.
 --   'qb-vehiclekeys' -> TriggerEvent('vehiclekeys:client:SetOwner', plate)
 --   'qs-vehiclekeys' -> exports['qs-vehiclekeys']:GiveKeys(plate)
---   'custom'         -> exports['cipher-trucking']:OnGiveKeys(vehicle, plate) -- implement your own handler
+--   'custom'         -> exports['XS-Trucking']:OnGiveKeys(vehicle, plate) -- implement your own handler
 --   false            -> disabled (no keys system on this server)
 -- Wrapped in pcall, so a wrong/missing export never hard-errors the script —
 -- flip Config.Debug on to see the real error in console if the truck still
@@ -79,10 +79,10 @@ Config.Trucking.KeysResource = 'qbx'
 
 -- Staff-only admin panel (company oversight — list/force-disband any
 -- company). Grant in server.cfg, e.g.:
---   add_ace group.admin cipher-trucking.admin allow
+--   add_ace group.admin xs-trucking.admin allow
 --   add_principal identifier.fivem:1234 group.admin
 Config.Trucking.AdminCommand = 'truckingadmin'
-Config.Trucking.AdminAce = 'cipher-trucking.admin'
+Config.Trucking.AdminAce = 'xs-trucking.admin'
 
 -- How many entries the Leaderboard tab shows.
 Config.Trucking.leaderboardLimit = 10
@@ -277,7 +277,7 @@ Config.Trucking.Shop = {
 
 -- ─────────────────────────────────────────────────────────────
 -- Achievements
--- Computed live from cipher_trucking_stats every time the Career tab is
+-- Computed live from xs_trucking_stats every time the Career tab is
 -- requested — no separate "earned" tracking table needed, just a threshold
 -- check. type = 'total_completed' | 'level' | 'total_earned'.
 -- ─────────────────────────────────────────────────────────────
@@ -370,7 +370,7 @@ Config.Trucking.Contracts = {
 -- ─────────────────────────────────────────────────────────────
 -- Hot contracts
 -- A small rotating set of bonus-payout contracts shown separately on the
--- board, refreshed every rotateMinutes — same idea as cipher's boosting
+-- board, refreshed every rotateMinutes — same idea as XS-CriminalTablet's boosting
 -- "wanted vehicles". Picked from `pool` (same shape as Config.Trucking.Contracts,
 -- `payout`/`xp` here are the BASE values before payoutBonusPct is applied).
 -- Rotation is computed lazily (checked whenever the contract board is
@@ -420,7 +420,7 @@ Config.Trucking.HotContracts = {
 -- Levels
 -- Personal driver progression — xp accumulates from completed deliveries,
 -- level gates which contracts show up on the board (Config.Trucking.Contracts'
--- minLevel field). Same shape/lookup convention as other Cipher scripts'
+-- minLevel field). Same shape/lookup convention as other XS scripts'
 -- task-rank systems.
 -- ─────────────────────────────────────────────────────────────
 Config.TruckingLevels = {
@@ -433,11 +433,11 @@ Config.TruckingLevels = {
 
 -- ─────────────────────────────────────────────────────────────
 -- Companies
--- Player-founded (NOT admin-seeded like cipher's gangs — a trucking company
+-- Player-founded (NOT admin-seeded like XS-CriminalTablet's gangs — a trucking company
 -- is a legit business, "start your own" is the whole point). Pay
 -- foundingCost at the depot to found one and become its Owner. Ranks/
 -- permissions/treasury/reputation all follow the exact same pattern as
--- cipher's gang system (server/company.lua), just renamed.
+-- XS-CriminalTablet's gang system (server/company.lua), just renamed.
 -- ─────────────────────────────────────────────────────────────
 Config.Trucking.Company = {
     foundingCost = 25000,
@@ -457,7 +457,7 @@ Config.Trucking.Company = {
     -- rename ranks later; this is just the starting template. Higher grade
     -- = more authority. Grade 0 is the entry rank. The founder starts at
     -- the top grade and can never be kicked/demoted (same boss-immunity
-    -- rule as cipher's gangs).
+    -- rule as XS-CriminalTablet's gangs).
     DefaultRanks = {
         [0] = { name = 'Employee', permissions = {} },
         [1] = { name = 'Manager',  permissions = { 'invite', 'manage_vehicles' } },
@@ -484,7 +484,7 @@ Config.Trucking.Company = {
     -- Company reputation tiers/titles — same shape/lookup as Config.TruckingLevels,
     -- but for the company as a whole. Earned from completed company-truck
     -- deliveries and collected dispatches. perkPoints awarded once, the
-    -- moment the company crosses into that level (same as cipher's
+    -- moment the company crosses into that level (same as XS-CriminalTablet's
     -- Config.GangLevels).
     Levels = {
         { level = 1, repNeeded = 0,    title = 'Startup Carrier',   perkPoints = 0 },
@@ -502,7 +502,7 @@ Config.Trucking.Company = {
     -- Permanent, company-wide modifiers bought with perk_points (never
     -- consumed, no inventory items). Three branches, each a chain of tiers —
     -- tier N requires tier N-1 in that SAME branch already owned, exactly
-    -- like cipher's Config.GangPerks (vault_1 -> vault_2 -> vault_3).
+    -- like XS-CriminalTablet's Config.GangPerks (vault_1 -> vault_2 -> vault_3).
     -- Gated by the 'manage_perks' permission (add it to a rank's permission
     -- list to allow buying perks from that rank — Owner has it by default
     -- via '*').
@@ -541,7 +541,7 @@ Config.Trucking.Company = {
         },
     },
 
-    -- Computed live from cipher_trucking_companies every time the Company
+    -- Computed live from xs_trucking_companies every time the Company
     -- tab is requested — no separate "earned" tracking table, same pattern
     -- as the personal achievements above. type = 'total_deliveries' | 'level' | 'reputation' | 'bank'.
     Achievements = {

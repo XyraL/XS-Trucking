@@ -33,7 +33,7 @@ end
 
 -- ── Setup ────────────────────────────────────────────────────
 CreateThread(function()
-    cfgCache = lib.callback.await('cipher-trucking:server:getMaintenanceConfig', false)
+    cfgCache = lib.callback.await('XS-Trucking:server:getMaintenanceConfig', false)
     if not cfgCache or not cfgCache.enabled then return end
 
     for _, s in ipairs(cfgCache.stations or {}) do
@@ -57,7 +57,7 @@ CreateThread(function()
             debug = Config.Debug,
             options = {
                 {
-                    name = ('cipher_trucking_fuel_%d'):format(i),
+                    name = ('xs_trucking_fuel_%d'):format(i),
                     icon = 'fa-solid fa-gas-pump',
                     label = 'Refuel Truck',
                     distance = 3.5,
@@ -86,7 +86,7 @@ end
 
 function Fuel.Stop()
     if Fuel.active and Fuel.ownedId then
-        TriggerServerEvent('cipher-trucking:server:reportFuel', Fuel.ownedId, Fuel.level)
+        TriggerServerEvent('XS-Trucking:server:reportFuel', Fuel.ownedId, Fuel.level)
     end
     Fuel.active = false
     Fuel.ownedId = nil
@@ -122,7 +122,7 @@ function Fuel.OpenRefuel()
     end
 
     lib.registerContext({
-        id = 'cipher_trucking_refuel',
+        id = 'xs_trucking_refuel',
         title = ('Refuel — currently %d%%'):format(math.floor(Fuel.level)),
         options = (function()
             local out = {}
@@ -131,7 +131,7 @@ function Fuel.OpenRefuel()
                     title = o.title, description = o.description, icon = o.icon,
                     onSelect = function()
                         local ok, result = lib.callback.await(
-                            'cipher-trucking:server:refuelVehicle', false, Fuel.ownedId, o.args)
+                            'XS-Trucking:server:refuelVehicle', false, Fuel.ownedId, o.args)
                         if not ok then
                             lib.notify({ description = result or 'Could not refuel.', type = 'error' })
                             return
@@ -145,7 +145,7 @@ function Fuel.OpenRefuel()
             return out
         end)(),
     })
-    lib.showContext('cipher_trucking_refuel')
+    lib.showContext('xs_trucking_refuel')
 end
 
 -- ── Burn loop ────────────────────────────────────────────────
@@ -188,7 +188,7 @@ CreateThread(function()
         -- crash loses almost nothing, rare enough not to hammer the DB.
         if Fuel.ownedId and (GetGameTimer() - lastReport) > 15000 then
             lastReport = GetGameTimer()
-            TriggerServerEvent('cipher-trucking:server:reportFuel', Fuel.ownedId, Fuel.level)
+            TriggerServerEvent('XS-Trucking:server:reportFuel', Fuel.ownedId, Fuel.level)
         end
 
         ::continue::
@@ -237,6 +237,6 @@ function Fuel.Warn()
     end
 end
 
-RegisterNetEvent('cipher-trucking:client:setWear', function(wear)
+RegisterNetEvent('XS-Trucking:client:setWear', function(wear)
     Fuel.wear = wear or {}
 end)

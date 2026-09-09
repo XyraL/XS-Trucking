@@ -1,4 +1,4 @@
-const RES = 'cipher-trucking';
+const RES = 'XS-Trucking';
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => document.querySelectorAll(s);
 
@@ -33,7 +33,7 @@ const state = {
 // every character. Wrapped in try/catch because some CEF configurations
 // disable localStorage entirely, in which case the defaults simply apply
 // for the session.
-const PREF_KEY = 'cipherTrucking.prefs';
+const PREF_KEY = 'xsTrucking.prefs';
 
 const DEFAULT_PREFS = {
     sfx: true,
@@ -138,7 +138,7 @@ function nui(endpoint, data = {}) {
             // Logged rather than swallowed: a fetch that rejects is a
             // different fault from one that never settles, and a silent catch
             // hides that distinction.
-            console.warn(`[cipher-trucking] '${endpoint}' failed:`, err);
+            console.warn(`[XS-Trucking] '${endpoint}' failed:`, err);
             return null;
         });
 
@@ -152,7 +152,7 @@ function nui(endpoint, data = {}) {
     let timer;
     const timeout = new Promise((resolve) => {
         timer = setTimeout(() => {
-            console.warn(`[cipher-trucking] '${endpoint}' did not respond within ${NUI_TIMEOUT_MS}ms`);
+            console.warn(`[XS-Trucking] '${endpoint}' did not respond within ${NUI_TIMEOUT_MS}ms`);
             resolve(null);
         }, NUI_TIMEOUT_MS);
     });
@@ -248,7 +248,7 @@ function conditionClass(cond) {
 // forcing a two-second wait every time the player checks the board would
 // stop being charming almost immediately.
 const BOOT_LINES = [
-    'CIPHER LOGISTICS TERMINAL',
+    'XYRAL LOGISTICS TERMINAL',
     'establishing depot uplink ................ OK',
     'authenticating driver credentials ........ OK',
     'syncing contract manifest ................ OK',
@@ -365,7 +365,7 @@ window.addEventListener('message', (ev) => {
         // visible tab — this fires twice a second.
         if (state.activeTab === 'map') {
             const root = $('#map-root');
-            if (root) CipherMap.updatePlayerOnly(root, data);
+            if (root) XSMap.updatePlayerOnly(root, data);
         }
     }
 });
@@ -416,7 +416,7 @@ function switchTab(tab) {
 }
 
 function showTabError(tab, err) {
-    console.error(`[cipher-trucking] '${tab}' tab failed to render:`, err);
+    console.error(`[XS-Trucking] '${tab}' tab failed to render:`, err);
 
     const panel = $(`#tab-${tab}`);
     if (!panel) return;
@@ -671,7 +671,7 @@ async function renderMap() {
             <div class="panel-subtitle">Plan a run — select a contract to plot its route from the depot</div>
         </div>
         <div id="map-layout">
-            <div id="map-root">${CipherMap.baseMarkup()}</div>
+            <div id="map-root">${XSMap.baseMarkup()}</div>
             <aside id="map-side">${skeleton(4)}</aside>
         </div>`;
 
@@ -703,7 +703,7 @@ function paintMap() {
     const root = $('#map-root');
     if (!root) return;
 
-    CipherMap.update(root, {
+    XSMap.update(root, {
         contracts: state.mapContracts,
         selectedId: state.mapSelected,
         depot: state.mapMeta && state.mapMeta.depot,
@@ -1236,7 +1236,7 @@ async function renderLeaderboard() {
 // ── Garage (personal trucks + trailers) ───────────────────────
 // Performance upgrades — shared between the personal Garage and the
 // Company Fleet view, since both list trucks from the same underlying
-// cipher_trucking_owned table. `o.upgrades` is a raw JSON string from the
+// xs_trucking_owned table. `o.upgrades` is a raw JSON string from the
 // server (id -> level); `defs` is Config.Trucking.PerformanceUpgrades as
 // returned by getGarage.
 function performanceHtml(o, defs, btnClass) {

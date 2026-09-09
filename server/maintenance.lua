@@ -55,13 +55,13 @@ end
 
 function Maintenance.Load(ownedId)
     if not ownedId then return defaults() end
-    local row = MySQL.single.await('SELECT maintenance FROM cipher_trucking_owned WHERE id = ?', { ownedId })
+    local row = MySQL.single.await('SELECT maintenance FROM xs_trucking_owned WHERE id = ?', { ownedId })
     return Maintenance.Read(row)
 end
 
 function Maintenance.Save(ownedId, m)
     if not ownedId then return end
-    MySQL.update('UPDATE cipher_trucking_owned SET maintenance = ? WHERE id = ?', { json.encode(m), ownedId })
+    MySQL.update('UPDATE xs_trucking_owned SET maintenance = ? WHERE id = ?', { json.encode(m), ownedId })
 end
 
 -- ── Consumption ──────────────────────────────────────────────
@@ -120,7 +120,7 @@ local function chargeFor(src, cid, owned, cost, reason)
         if not company or company.id ~= owned.company_id then return false, "Not your company's vehicle." end
         if company.bank < cost then return false, ('Costs $%d — treasury too low.'):format(cost) end
         company.bank = company.bank - cost
-        MySQL.update('UPDATE cipher_trucking_companies SET bank = bank - ? WHERE id = ?', { cost, company.id })
+        MySQL.update('UPDATE xs_trucking_companies SET bank = bank - ? WHERE id = ?', { cost, company.id })
         return true
     end
 
@@ -143,7 +143,7 @@ function Maintenance.Service(src, ownedId, componentId)
     local def = wearDef(componentId)
     if not def then return false, 'Unknown component.' end
 
-    local owned = MySQL.single.await('SELECT * FROM cipher_trucking_owned WHERE id = ?', { ownedId })
+    local owned = MySQL.single.await('SELECT * FROM xs_trucking_owned WHERE id = ?', { ownedId })
     if not owned then return false, 'Vehicle not found.' end
     if owned.kind ~= 'truck' then return false, 'Only trucks need servicing.' end
 
@@ -155,7 +155,7 @@ function Maintenance.Service(src, ownedId, componentId)
     local worn = 100 - (m[componentId] or 100)
     local cost = math.ceil(def.serviceCost * (worn / 100))
 
-    local ok, err = chargeFor(src, cid, owned, cost, 'cipher-trucking:service')
+    local ok, err = chargeFor(src, cid, owned, cost, 'XS-Trucking:service')
     if not ok then return false, err end
 
     m[componentId] = 100
@@ -171,7 +171,7 @@ function Maintenance.ServiceAll(src, ownedId)
     local cid = Framework.GetCitizenId(src)
     if not cid then return false, 'No character loaded.' end
 
-    local owned = MySQL.single.await('SELECT * FROM cipher_trucking_owned WHERE id = ?', { ownedId })
+    local owned = MySQL.single.await('SELECT * FROM xs_trucking_owned WHERE id = ?', { ownedId })
     if not owned then return false, 'Vehicle not found.' end
     if owned.kind ~= 'truck' then return false, 'Only trucks need servicing.' end
 
@@ -183,7 +183,7 @@ function Maintenance.ServiceAll(src, ownedId)
     end
     if cost <= 0 then return false, 'Nothing needs servicing.' end
 
-    local ok, err = chargeFor(src, cid, owned, cost, 'cipher-trucking:serviceAll')
+    local ok, err = chargeFor(src, cid, owned, cost, 'XS-Trucking:serviceAll')
     if not ok then return false, err end
 
     for _, w in ipairs(cfg().Wear or {}) do m[w.id] = 100 end
@@ -210,7 +210,7 @@ function Maintenance.Refuel(src, ownedId, toPct)
         return true, { charged = 0, fuel = toPct }
     end
 
-    local owned = MySQL.single.await('SELECT * FROM cipher_trucking_owned WHERE id = ?', { ownedId })
+    local owned = MySQL.single.await('SELECT * FROM xs_trucking_owned WHERE id = ?', { ownedId })
     if not owned then return false, 'Vehicle not found.' end
 
     local m = Maintenance.Read(owned)
@@ -219,7 +219,7 @@ function Maintenance.Refuel(src, ownedId, toPct)
 
     local cost = math.ceil((toPct - current) * c.Fuel.pricePerPercent)
 
-    local ok, err = chargeFor(src, cid, owned, cost, 'cipher-trucking:refuel')
+    local ok, err = chargeFor(src, cid, owned, cost, 'XS-Trucking:refuel')
     if not ok then return false, err end
 
     m.fuel = toPct
@@ -230,7 +230,7 @@ function Maintenance.Refuel(src, ownedId, toPct)
 end
 
 -- ── Callbacks ────────────────────────────────────────────────
-lib.callback.register('cipher-trucking:server:getMaintenanceConfig', function()
+lib.callback.register('XS-Trucking:server:getMaintenanceConfig', function()
     if not Maintenance.Enabled() then return { enabled = false } end
     local c = cfg()
     return {
@@ -247,12 +247,12 @@ lib.callback.register('cipher-trucking:server:getMaintenanceConfig', function()
     }
 end)
 
-lib.callback.register('cipher-trucking:server:serviceVehicle', function(src, ownedId, componentId)
+lib.callback.register('XS-Trucking:server:serviceVehicle', function(src, ownedId, componentId)
     if componentId == 'all' then return Maintenance.ServiceAll(src, ownedId) end
     return Maintenance.Service(src, ownedId, componentId)
 end)
 
-lib.callback.register('cipher-trucking:server:refuelVehicle', function(src, ownedId, toPct)
+lib.callback.register('XS-Trucking:server:refuelVehicle', function(src, ownedId, toPct)
     return Maintenance.Refuel(src, ownedId, toPct)
 end)
 
@@ -261,14 +261,14 @@ end)
 -- a trailer is attached — but the value is clamped and can only ever go
 -- DOWN through this path, so a modified client can't refill its own tank
 -- for free by reporting 100.
-RegisterNetEvent('cipher-trucking:server:reportFuel', function(ownedId, fuel)
+RegisterNetEvent('XS-Trucking:server:reportFuel', function(ownedId, fuel)
     local src = source
     if not Maintenance.Enabled() or not ownedId then return end
 
     local cid = Framework.GetCitizenId(src)
     if not cid then return end
 
-    local owned = MySQL.single.await('SELECT * FROM cipher_trucking_owned WHERE id = ?', { ownedId })
+    local owned = MySQL.single.await('SELECT * FROM xs_trucking_owned WHERE id = ?', { ownedId })
     if not owned then return end
     if owned.company_id then
         local company = Company.GetBySource(src)

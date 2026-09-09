@@ -9,7 +9,7 @@
 CreateThread(function()
     exports.ox_target:addGlobalPlayer({
         {
-            name = 'cipher_trucking_company_invite',
+            name = 'xs_trucking_company_invite',
             icon = 'fas fa-user-plus',
             label = 'Invite to Company',
             distance = 3.0,
@@ -21,7 +21,7 @@ CreateThread(function()
                 local targetSrc = GetPlayerServerId(playerIndex)
                 if not targetSrc or targetSrc <= 0 then return end
 
-                local ok, err = lib.callback.await('cipher-trucking:server:companyInvite', false, targetSrc)
+                local ok, err = lib.callback.await('XS-Trucking:server:companyInvite', false, targetSrc)
                 if not ok then
                     lib.notify({ description = err or 'Could not send invite.', type = 'error' })
                 end
@@ -30,7 +30,7 @@ CreateThread(function()
     })
 end)
 
-RegisterNetEvent('cipher-trucking:client:companyInvite', function(data)
+RegisterNetEvent('XS-Trucking:client:companyInvite', function(data)
     local choice = lib.alertDialog({
         header = 'Company Invite',
         content = ('%s invited you to join %s.'):format(data.from or 'Someone', data.company or 'a company'),
@@ -41,7 +41,7 @@ RegisterNetEvent('cipher-trucking:client:companyInvite', function(data)
 
     if choice ~= 'confirm' then return end
 
-    local ok, err = lib.callback.await('cipher-trucking:server:companyAcceptInvite', false)
+    local ok, err = lib.callback.await('XS-Trucking:server:companyAcceptInvite', false)
     if ok then
         lib.notify({ description = 'You joined the company.', type = 'success' })
     else

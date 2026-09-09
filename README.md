@@ -1,19 +1,19 @@
-<h1 align="center">Cipher Trucking</h1>
+<h1 align="center">XS-Trucking</h1>
 
 <p align="center">A civilian trucking job for <strong>QBox</strong> and <strong>QBCore</strong> — live route map, truck ownership, fuel and maintenance, and companies.</p>
 
 <p align="center">
-  <a href="https://github.com/XyraL/cipher-trucking/releases"><img src="https://img.shields.io/github/v/release/XyraL/cipher-trucking?style=flat-square&color=f5bb55&label=release" alt="Latest release"></a>
+  <a href="https://github.com/XyraL/XS-Trucking/releases"><img src="https://img.shields.io/github/v/release/XyraL/XS-Trucking?style=flat-square&color=f5bb55&label=release" alt="Latest release"></a>
   <img src="https://img.shields.io/badge/framework-QBox%20%7C%20QBCore-55dcff?style=flat-square" alt="framework">
   <img src="https://img.shields.io/badge/price-free-30d158?style=flat-square" alt="price">
-  <a href="https://xyralscripts.dev/docs-cipher-trucking"><img src="https://img.shields.io/badge/docs-xyralscripts.dev-a889ff?style=flat-square" alt="docs"></a>
+  <a href="https://xyralscripts.dev/docs-xs-trucking"><img src="https://img.shields.io/badge/docs-xyralscripts.dev-a889ff?style=flat-square" alt="docs"></a>
   <a href="https://discord.gg/XRURAw4TM2"><img src="https://img.shields.io/badge/support-discord-5865F2?style=flat-square" alt="support"></a>
 </p>
 
 <p align="center">
-  <a href="https://xyralscripts.dev/cipher-trucking">Website</a> &nbsp;·&nbsp;
-  <a href="https://xyralscripts.dev/docs-cipher-trucking">Setup guide</a> &nbsp;·&nbsp;
-  <a href="https://github.com/XyraL/cipher-trucking/releases">Releases</a> &nbsp;·&nbsp;
+  <a href="https://xyralscripts.dev/xs-trucking">Website</a> &nbsp;·&nbsp;
+  <a href="https://xyralscripts.dev/docs-xs-trucking">Setup guide</a> &nbsp;·&nbsp;
+  <a href="https://github.com/XyraL/XS-Trucking/releases">Releases</a> &nbsp;·&nbsp;
   <a href="https://discord.gg/XRURAw4TM2">Discord</a>
 </p>
 
@@ -31,19 +31,19 @@
   engine won't start even though the vehicle itself isn't locked.
 
 ## Install
-1. Drop the `cipher-trucking` folder into your `resources`.
+1. Drop the `XS-Trucking` folder into your `resources`.
 2. **No SQL import needed.** Every table creates and migrates itself on first
    start (`server/db.lua`). Upgrading from an earlier version is the same
    process — drop the folder in and restart; any missing columns are added
    automatically. Watch the console for
-   `[cipher-trucking] database ready — N tables verified`.
-3. Add `ensure cipher-trucking` to your `server.cfg` (after ox_lib, ox_target,
+   `[XS-Trucking] database ready — N tables verified`.
+3. Add `ensure XS-Trucking` to your `server.cfg` (after ox_lib, ox_target,
    oxmysql, your framework, and your keys resource if you run one).
 4. Set `Config.Trucking.KeysResource` to match your server's keys system
    (defaults to `'qbx'` for the standard QBox recipe's `qbx_vehiclekeys`).
 5. Grant the admin ACE for the oversight panel (see Admin panel below), e.g.:
    ```
-   add_ace group.admin cipher-trucking.admin allow
+   add_ace group.admin xs-trucking.admin allow
    add_principal identifier.fivem:1234 group.admin
    ```
 6. Tune the rest of `config.lua` — see the callout below before you go live.
@@ -73,7 +73,7 @@
 
 ### Dashboard (NUI)
 `ox_target` on the depot computer opens a full custom dashboard, styled to
-match the rest of the Cipher lineup:
+match the rest of the lineup:
 - **Contracts** — every contract is shown, including ones you can't take yet
   (grayed out with the reason — rank or a missing specialized trailer)
   rather than hidden. Rotating **hot contracts** (bonus payout, see below)
@@ -199,7 +199,7 @@ rather than the contract failing outright.
   in-game vehicle health, not a fake timer. A vehicle at 0% condition can't
   be selected/dispatched until repaired (`Config.Trucking.repairCostPerPoint`).
 - Owned trucks/trailers are stored by this script alone
-  (`cipher_trucking_owned`) — no dependency on qb-garage, ox-garage, or any
+  (`xs_trucking_owned`) — no dependency on qb-garage, ox-garage, or any
   other garage resource.
 
 ### Driver rating
@@ -255,7 +255,7 @@ everywhere else in this resource:
 - **Perk tree** (`Config.Trucking.Company.PerkTree`) — three branches
   (Fleet, Logistics, Treasury), each a chain of tiers where tier N requires
   tier N-1 in that same branch already owned (structurally identical to
-  `cipher`'s gang perk tree). Spent from perk points, gated by the
+  `XS-CriminalTablet`'s gang perk tree). Spent from perk points, gated by the
   `manage_perks` permission. Fleet raises max concurrent dispatch slots;
   Logistics reduces dispatch time and boosts the driver cut on
   company-truck deliveries; Treasury adds a bonus on every deposit.
@@ -273,9 +273,9 @@ A separate, red-accented overlay for staff oversight — lists every company
 (owner, treasury, reputation, member count) with a "Force Disband" button,
 for cases where an Owner is gone or abusive and the normal Owner-only
 disband isn't available. Gated by `Config.Trucking.AdminAce`
-(`cipher-trucking.admin` by default) checked server-side on every action —
+(`xs-trucking.admin` by default) checked server-side on every action —
 opened with `/`+`Config.Trucking.AdminCommand` (`truckingadmin` by default).
-Modeled directly on `cipher`'s own admin tablet (`isAdmin`/`guarded`
+Modeled directly on `XS-CriminalTablet`'s own admin tablet (`isAdmin`/`guarded`
 pattern), minus Discord logging — this resource has no Discord integration.
 
 ### Progression & payout
@@ -300,7 +300,7 @@ permissions (resolved server-side, never trusting client-claimed state)
 before advancing any stage, paying out, or touching a treasury. The NUI
 dashboard is a thin client-side layer on top of the same server callbacks —
 nothing NUI-specific lives server-side. The company system
-(`server/company.lua`) is a direct structural port of this codebase's `cipher`
+(`server/company.lua`) is a direct structural port of this codebase's `XS-CriminalTablet`
 gang system (ranks/permissions/treasury/reputation), renamed to fit trucking.
 
 ---
@@ -308,25 +308,25 @@ gang system (ranks/permissions/treasury/reputation), renamed to fit trucking.
 ## Documentation
 
 Full setup guide, requirements and troubleshooting:
-**[xyralscripts.dev/docs-cipher-trucking](https://xyralscripts.dev/docs-cipher-trucking)**
+**[xyralscripts.dev/docs-xs-trucking](https://xyralscripts.dev/docs-xs-trucking)**
 
 ## Support
 
-- **Found a bug?** [Open an issue](https://github.com/XyraL/cipher-trucking/issues)
+- **Found a bug?** [Open an issue](https://github.com/XyraL/XS-Trucking/issues)
 - **Need setup help?** [Join the Discord](https://discord.gg/XRURAw4TM2) — check the setup guide first, it usually has the answer
 
-## The rest of the Cipher line
+## My other scripts
 
 All free, all source-available.
 
 | Script | What it is |
 |---|---|
-| **[Cipher](https://github.com/XyraL/cipher)** | modular criminal device for QBox and QBCore — gang ops, blackmarket and boosting in one encrypted tablet. |
-| **[Cipher MDT](https://github.com/XyraL/cipher-mdt)** | multi-department MDT for QBox — police, EMS and fire with live CAD, records, patient care and a live unit map. |
-| **[Cipher Admin](https://github.com/XyraL/cipher-admin)** | advanced admin suite for QBox and QBCore — player management, bans, reports, inventory tools and entity inspection. |
-| **[Cipher Drone](https://github.com/XyraL/cipher-drone)** | deployable police drone for QBox and QBCore — smooth flight, thermal, spotlight, tracker darts and real counterplay. |
-| **[Cipher MultiCharacter](https://github.com/XyraL/cipher-multicharacter)** | cinematic character selection for QBox and QBCore — identity dossiers, saved appearances, spawn cameras and configurable slots. |
-| **[Cipher Dispatch](https://github.com/XyraL/cipher-dispatch)** | multi-department live dispatch for QBox and QBCore — responder tracking, priority calls, TAC radio and provider integrations. |
+| **[XS-CriminalTablet](https://github.com/XyraL/XS-CriminalTablet)** | modular criminal device for QBox and QBCore — gang ops, blackmarket and boosting in one encrypted tablet. |
+| **[XS-MDT](https://github.com/XyraL/XS-MDT)** | multi-department MDT for QBox — police, EMS and fire with live CAD, records, patient care and a live unit map. |
+| **[XS-AdminMenu](https://github.com/XyraL/XS-AdminMenu)** | advanced admin suite for QBox and QBCore — player management, bans, reports, inventory tools and entity inspection. |
+| **[XS-Drone](https://github.com/XyraL/XS-Drone)** | deployable police drone for QBox and QBCore — smooth flight, thermal, spotlight, tracker darts and real counterplay. |
+| **[XS-MultiCharacter](https://github.com/XyraL/XS-MultiCharacter)** | cinematic character selection for QBox and QBCore — identity dossiers, saved appearances, spawn cameras and configurable slots. |
+| **[XS-Dispatch](https://github.com/XyraL/XS-Dispatch)** | multi-department live dispatch for QBox and QBCore — responder tracking, priority calls, TAC radio and provider integrations. |
 
 ## License
 

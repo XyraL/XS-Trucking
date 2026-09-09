@@ -6,7 +6,7 @@
 -- below is re-checked server-side anyway. A player who forges these NUI
 -- messages reaches a guarded() handler and gets rejected.
 -- ─────────────────────────────────────────────────────────────
-RegisterNetEvent('cipher-trucking:client:openAdmin', function()
+RegisterNetEvent('XS-Trucking:client:openAdmin', function()
     SetNuiFocus(true, true)
     SendNUIMessage({ action = 'openAdmin' })
 end)
@@ -19,11 +19,11 @@ end)
 -- Thin proxies. Each one names its server counterpart directly so the
 -- mapping stays greppable in both directions.
 local RELAY = {
-    adminOverview         = 'cipher-trucking:server:adminOverview',
-    adminOnlineRoster     = 'cipher-trucking:server:adminOnlineRoster',
-    adminListCompanies    = 'cipher-trucking:server:adminListCompanies',
-    adminSettings         = 'cipher-trucking:server:adminSettings',
-    adminRecentDeliveries = 'cipher-trucking:server:adminRecentDeliveries',
+    adminOverview         = 'XS-Trucking:server:adminOverview',
+    adminOnlineRoster     = 'XS-Trucking:server:adminOnlineRoster',
+    adminListCompanies    = 'XS-Trucking:server:adminListCompanies',
+    adminSettings         = 'XS-Trucking:server:adminSettings',
+    adminRecentDeliveries = 'XS-Trucking:server:adminRecentDeliveries',
 }
 
 for nuiName, callbackName in pairs(RELAY) do
@@ -33,15 +33,15 @@ for nuiName, callbackName in pairs(RELAY) do
 end
 
 RegisterNUICallback('adminSearchPlayers', function(data, cb)
-    cb(lib.callback.await('cipher-trucking:server:adminSearchPlayers', false, data.query) or {})
+    cb(lib.callback.await('XS-Trucking:server:adminSearchPlayers', false, data.query) or {})
 end)
 
 RegisterNUICallback('adminPlayerDetail', function(data, cb)
-    cb(lib.callback.await('cipher-trucking:server:adminPlayerDetail', false, data.citizenid))
+    cb(lib.callback.await('XS-Trucking:server:adminPlayerDetail', false, data.citizenid))
 end)
 
 RegisterNUICallback('adminListFleet', function(data, cb)
-    cb(lib.callback.await('cipher-trucking:server:adminListFleet', false, data.filter) or {})
+    cb(lib.callback.await('XS-Trucking:server:adminListFleet', false, data.filter) or {})
 end)
 
 -- Write actions all share the (ok, message) response shape.
@@ -52,15 +52,15 @@ local function action(nuiName, callbackName, argFn)
     end)
 end
 
-action('adminSetLevel',      'cipher-trucking:server:adminSetLevel',      function(d) return { d.citizenid, d.level } end)
-action('adminAddXp',         'cipher-trucking:server:adminAddXp',         function(d) return { d.citizenid, d.amount } end)
-action('adminResetRating',   'cipher-trucking:server:adminResetRating',   function(d) return { d.citizenid } end)
-action('adminGiveCash',      'cipher-trucking:server:adminGiveCash',      function(d) return { d.citizenid, d.amount } end)
-action('adminClearJob',      'cipher-trucking:server:adminClearJob',      function(d) return { d.citizenid } end)
-action('adminRepairVehicle', 'cipher-trucking:server:adminRepairVehicle', function(d) return { d.ownedId } end)
-action('adminClearDispatch', 'cipher-trucking:server:adminClearDispatch', function(d) return { d.ownedId } end)
-action('adminDeleteVehicle', 'cipher-trucking:server:adminDeleteVehicle', function(d) return { d.ownedId } end)
-action('adminSetTreasury',   'cipher-trucking:server:adminSetTreasury',   function(d) return { d.companyId, d.amount } end)
-action('adminDisbandCompany','cipher-trucking:server:adminDisbandCompany',function(d) return { d.companyId } end)
-action('adminSetSetting',    'cipher-trucking:server:adminSetSetting',    function(d) return { d.key, d.value } end)
-action('adminResetSetting',  'cipher-trucking:server:adminResetSetting',  function(d) return { d.key } end)
+action('adminSetLevel',      'XS-Trucking:server:adminSetLevel',      function(d) return { d.citizenid, d.level } end)
+action('adminAddXp',         'XS-Trucking:server:adminAddXp',         function(d) return { d.citizenid, d.amount } end)
+action('adminResetRating',   'XS-Trucking:server:adminResetRating',   function(d) return { d.citizenid } end)
+action('adminGiveCash',      'XS-Trucking:server:adminGiveCash',      function(d) return { d.citizenid, d.amount } end)
+action('adminClearJob',      'XS-Trucking:server:adminClearJob',      function(d) return { d.citizenid } end)
+action('adminRepairVehicle', 'XS-Trucking:server:adminRepairVehicle', function(d) return { d.ownedId } end)
+action('adminClearDispatch', 'XS-Trucking:server:adminClearDispatch', function(d) return { d.ownedId } end)
+action('adminDeleteVehicle', 'XS-Trucking:server:adminDeleteVehicle', function(d) return { d.ownedId } end)
+action('adminSetTreasury',   'XS-Trucking:server:adminSetTreasury',   function(d) return { d.companyId, d.amount } end)
+action('adminDisbandCompany','XS-Trucking:server:adminDisbandCompany',function(d) return { d.companyId } end)
+action('adminSetSetting',    'XS-Trucking:server:adminSetSetting',    function(d) return { d.key, d.value } end)
+action('adminResetSetting',  'XS-Trucking:server:adminResetSetting',  function(d) return { d.key } end)

@@ -13,7 +13,7 @@
 -- ─────────────────────────────────────────────────────────────
 local active = {}
 
--- Which owned truck/trailer (cipher_trucking_owned.id) a player has selected
+-- Which owned truck/trailer (xs_trucking_owned.id) a player has selected
 -- to use on their next contract instead of the free depot truck/trailer.
 -- Transient, in-memory only — resets on reconnect, same as `active`.
 local selectedTruck = {}
@@ -69,7 +69,7 @@ local function trailerAttached(job)
 
     local gap = dist(GetEntityCoords(truck), GetEntityCoords(trailer))
     if Config.Debug then
-        print(('^3[cipher-trucking]^0 truck-trailer distance: %.2f'):format(gap))
+        print(('^3[XS-Trucking]^0 truck-trailer distance: %.2f'):format(gap))
     end
     return gap <= 20.0
 end
@@ -102,7 +102,7 @@ local function giveVehicleKeysServer(src, veh)
 
     local ok, err = pcall(function() exports.qbx_vehiclekeys:GiveKeys(src, veh, false) end)
     if not ok and Config.Debug then
-        print(('^1[cipher-trucking]^0 giveVehicleKeys (qbx_vehiclekeys) failed: %s'):format(tostring(err)))
+        print(('^1[XS-Trucking]^0 giveVehicleKeys (qbx_vehiclekeys) failed: %s'):format(tostring(err)))
     end
 end
 
@@ -121,9 +121,9 @@ local function ensureStats(cid, name)
                  xp = 0, level = 1, total_completed = 0, total_earned = 0, rating_sum = 0 }
     end
 
-    local row = MySQL.single.await('SELECT * FROM cipher_trucking_stats WHERE citizenid = ?', { cid })
+    local row = MySQL.single.await('SELECT * FROM xs_trucking_stats WHERE citizenid = ?', { cid })
     if row then return row end
-    MySQL.insert.await('INSERT IGNORE INTO cipher_trucking_stats (citizenid, name) VALUES (?, ?)', { cid, name or '' })
+    MySQL.insert.await('INSERT IGNORE INTO xs_trucking_stats (citizenid, name) VALUES (?, ?)', { cid, name or '' })
     return {
         citizenid = cid, name = name or '',
         xp = 0, level = 1, total_completed = 0, total_earned = 0, rating_sum = 0,
@@ -240,7 +240,7 @@ end
 -- manage_vehicles, checked separately at those call sites).
 local function getUsableVehicle(src, cid, ownedId, kind)
     if not ownedId then return nil end
-    local row = MySQL.single.await('SELECT * FROM cipher_trucking_owned WHERE id = ? AND kind = ?', { ownedId, kind })
+    local row = MySQL.single.await('SELECT * FROM xs_trucking_owned WHERE id = ? AND kind = ?', { ownedId, kind })
     if not row then return nil end
     if row.company_id then
         local company = Company.GetBySource(src)
@@ -252,7 +252,7 @@ local function getUsableVehicle(src, cid, ownedId, kind)
 end
 
 -- Live-computed against current stats every time it's requested — no
--- separate "earned" tracking table, same pattern as cipher's boosting
+-- separate "earned" tracking table, same pattern as XS-CriminalTablet's boosting
 -- achievements.
 local function truckingAchievementsFor(stats)
     local list = {}
@@ -345,7 +345,7 @@ local function rewardPlayer(src, def, job)
     local tripScore = tripRatingScore(job)
 
     MySQL.update(
-        'UPDATE cipher_trucking_stats SET xp = ?, level = ?, total_completed = total_completed + 1, total_earned = total_earned + ?, rating_sum = rating_sum + ?, name = ? WHERE citizenid = ?',
+        'UPDATE xs_trucking_stats SET xp = ?, level = ?, total_completed = total_completed + 1, total_earned = total_earned + ?, rating_sum = rating_sum + ?, name = ? WHERE citizenid = ?',
         { newXp, newLevel, payout, tripScore, Framework.GetName(src) or cid, cid })
 
     local driverCut, companyCut = payout, 0
@@ -359,21 +359,21 @@ local function rewardPlayer(src, def, job)
             SGet('company.driverCutPct', Config.Trucking.Company.driverCutPct) + (mods.driverCutBonusPct or 0))
         driverCut = math.floor(payout * (driverCutPct / 100))
         companyCut = payout - driverCut
-        Framework.AddMoney(src, Config.Trucking.payoutAccount, driverCut, 'cipher-trucking:delivery')
+        Framework.AddMoney(src, Config.Trucking.payoutAccount, driverCut, 'XS-Trucking:delivery')
         Company.CreditTreasury(job.companyId, companyCut, 'delivery:' .. def.id)
         Company.AddReputation(job.companyId, 15)
-        MySQL.update('UPDATE cipher_trucking_companies SET total_deliveries = total_deliveries + 1 WHERE id = ?', { job.companyId })
+        MySQL.update('UPDATE xs_trucking_companies SET total_deliveries = total_deliveries + 1 WHERE id = ?', { job.companyId })
         Framework.Notify(src,
             ('Delivery complete — +$%d (company kept $%d), +%d XP.'):format(driverCut, companyCut, xpGain), 'success')
     else
-        Framework.AddMoney(src, Config.Trucking.payoutAccount, payout, 'cipher-trucking:delivery')
+        Framework.AddMoney(src, Config.Trucking.payoutAccount, payout, 'XS-Trucking:delivery')
         Framework.Notify(src, ('Delivery complete — +$%d, +%d XP.'):format(payout, xpGain), 'success')
     end
 
     -- Fire-and-forget on purpose: this is a reporting row, and nothing below
     -- reads it back. A slow insert must never delay paying the player out.
     MySQL.insert([[
-        INSERT INTO cipher_trucking_deliveries
+        INSERT INTO xs_trucking_deliveries
             (citizenid, contract_id, label, cargo_type, base_payout, final_payout,
              driver_cut, company_cut, company_id, truck_bonus_pct, hot_bonus_pct,
              multistop_bonus_pct, rating_bonus_pct, spoiled, trip_rating,
@@ -422,7 +422,7 @@ local function applyOwnedTruckDamage(job)
     local conditionLoss = math.floor(damage * rate)
     if conditionLoss <= 0 then return end
 
-    MySQL.update('UPDATE cipher_trucking_owned SET `condition` = GREATEST(0, `condition` - ?) WHERE id = ?',
+    MySQL.update('UPDATE xs_trucking_owned SET `condition` = GREATEST(0, `condition` - ?) WHERE id = ?',
         { conditionLoss, job.ownedTruckId })
 end
 
@@ -449,7 +449,7 @@ local function completeJob(src, job)
         Maintenance.ApplyTrip(job.ownedTruckId, km, damage)
     end
 
-    TriggerClientEvent('cipher-trucking:client:cleanupVehicles', src, job.truckNetId, job.trailerNetId)
+    TriggerClientEvent('XS-Trucking:client:cleanupVehicles', src, job.truckNetId, job.trailerNetId)
 
     applyOwnedTruckDamage(job)
 
@@ -465,7 +465,7 @@ local function selectedTrailerCargoType(src, cid)
     -- Sits directly in the getContracts path, so an ungated query here on a
     -- cold start took the whole Contracts tab down with it.
     if not WaitForDB() then return nil end
-    local owned = MySQL.single.await('SELECT model FROM cipher_trucking_owned WHERE id = ? AND citizenid = ? AND kind = ?',
+    local owned = MySQL.single.await('SELECT model FROM xs_trucking_owned WHERE id = ? AND citizenid = ? AND kind = ?',
         { ownedId, cid, 'trailer' })
     if not owned then
         selectedTrailer[src] = nil
@@ -476,7 +476,7 @@ local function selectedTrailerCargoType(src, cid)
 end
 
 -- ── Callbacks ────────────────────────────────────────────────
-lib.callback.register('cipher-trucking:server:getContracts', function(src)
+lib.callback.register('XS-Trucking:server:getContracts', function(src)
     local cid = Framework.GetCitizenId(src)
     if not cid then return {} end
     local stats = ensureStats(cid, Framework.GetName(src))
@@ -529,7 +529,7 @@ lib.callback.register('cipher-trucking:server:getContracts', function(src)
     return list
 end)
 
-lib.callback.register('cipher-trucking:server:acceptContract', function(src, contractId)
+lib.callback.register('XS-Trucking:server:acceptContract', function(src, contractId)
     if active[src] then return false, 'You already have an active delivery.' end
 
     local cid = Framework.GetCitizenId(src)
@@ -639,7 +639,7 @@ lib.callback.register('cipher-trucking:server:acceptContract', function(src, con
     }
 end)
 
-lib.callback.register('cipher-trucking:server:registerTruck', function(src, netId)
+lib.callback.register('XS-Trucking:server:registerTruck', function(src, netId)
     local job = active[src]
     if not job or job.stage ~= 'hookup' then return false end
     job.truckNetId = netId
@@ -664,20 +664,20 @@ lib.callback.register('cipher-trucking:server:registerTruck', function(src, netI
         job.baselineHealth = GetVehicleBodyHealth(veh) + GetVehicleEngineHealth(veh)
         giveVehicleKeysServer(src, veh)
     elseif Config.Debug then
-        print('^1[cipher-trucking]^0 registerTruck: could not resolve truck entity from netId in time')
+        print('^1[XS-Trucking]^0 registerTruck: could not resolve truck entity from netId in time')
     end
 
     return true
 end)
 
-lib.callback.register('cipher-trucking:server:registerTrailer', function(src, netId)
+lib.callback.register('XS-Trucking:server:registerTrailer', function(src, netId)
     local job = active[src]
     if not job or job.stage ~= 'hookup' then return false end
     job.trailerNetId = netId
     return true
 end)
 
-lib.callback.register('cipher-trucking:server:doHookup', function(src)
+lib.callback.register('XS-Trucking:server:doHookup', function(src)
     local job = active[src]
     if not job or job.stage ~= 'hookup' then return false, 'No hookup in progress.' end
 
@@ -699,7 +699,7 @@ lib.callback.register('cipher-trucking:server:doHookup', function(src)
     return true
 end)
 
-lib.callback.register('cipher-trucking:server:doDeliver', function(src)
+lib.callback.register('XS-Trucking:server:doDeliver', function(src)
     local job = active[src]
     if not job or job.stage ~= 'enroute' then return false, 'No delivery in progress.' end
 
@@ -750,7 +750,7 @@ lib.callback.register('cipher-trucking:server:doDeliver', function(src)
     return true, { isFinalStop = true, stopIndex = job.stopIndex, stopCount = #job.stops }
 end)
 
-lib.callback.register('cipher-trucking:server:doReturn', function(src)
+lib.callback.register('XS-Trucking:server:doReturn', function(src)
     local job = active[src]
     if not job or job.stage ~= 'return' then return false, 'No return in progress.' end
 
@@ -772,7 +772,7 @@ lib.callback.register('cipher-trucking:server:doReturn', function(src)
 end)
 
 -- ── NUI dashboard callbacks ──────────────────────────────────
-lib.callback.register('cipher-trucking:server:getCareer', function(src)
+lib.callback.register('XS-Trucking:server:getCareer', function(src)
     local cid = Framework.GetCitizenId(src)
     if not cid then return nil end
     local stats = ensureStats(cid, Framework.GetName(src))
@@ -794,7 +794,7 @@ lib.callback.register('cipher-trucking:server:getCareer', function(src)
     }
 end)
 
-lib.callback.register('cipher-trucking:server:getActiveJob', function(src)
+lib.callback.register('XS-Trucking:server:getActiveJob', function(src)
     local job = active[src]
     if not job then return nil end
     local def = findContract(job.contractId)
@@ -825,14 +825,14 @@ lib.callback.register('cipher-trucking:server:getActiveJob', function(src)
 end)
 
 -- ── Analytics ────────────────────────────────────────────────
--- Everything here is derived from cipher_trucking_deliveries. A player with
+-- Everything here is derived from xs_trucking_deliveries. A player with
 -- no rows yet gets zeroed structures rather than nil, so the NUI renders
 -- empty axes instead of an error state.
 --
 -- NOTE: every aggregate is wrapped in tonumber(). oxmysql hands SUM()/AVG()
 -- back as STRINGS, and comparing or arithmetic-ing those against numbers
 -- throws — the same trap that bit cipher-drugs' getPhoneHome.
-lib.callback.register('cipher-trucking:server:getAnalytics', function(src)
+lib.callback.register('XS-Trucking:server:getAnalytics', function(src)
     local cid = Framework.GetCitizenId(src)
     if not cid then return nil end
     if not WaitForDB() then return nil end
@@ -847,7 +847,7 @@ lib.callback.register('cipher-trucking:server:getAnalytics', function(src)
                SUM(driver_cut) AS earned,
                COUNT(*) AS deliveries,
                SUM(distance_m) AS distance
-        FROM cipher_trucking_deliveries
+        FROM xs_trucking_deliveries
         WHERE citizenid = ? AND completed_at >= DATE_SUB(CURDATE(), INTERVAL ? DAY)
         GROUP BY DATE(completed_at)
         ORDER BY day ASC
@@ -867,14 +867,14 @@ lib.callback.register('cipher-trucking:server:getAnalytics', function(src)
                COALESCE(AVG(trip_rating), 100) AS avg_rating,
                COALESCE(SUM(duration_seconds), 0) AS seconds,
                COALESCE(SUM(spoiled), 0) AS spoiled
-        FROM cipher_trucking_deliveries WHERE citizenid = ?
+        FROM xs_trucking_deliveries WHERE citizenid = ?
     ]], { cid }) or {}
 
     -- Which contracts this driver actually runs, by total take.
     local byContract = MySQL.query.await([[
         SELECT label, COUNT(*) AS runs, SUM(driver_cut) AS earned,
                COALESCE(AVG(trip_rating), 100) AS avg_rating
-        FROM cipher_trucking_deliveries
+        FROM xs_trucking_deliveries
         WHERE citizenid = ?
         GROUP BY contract_id, label
         ORDER BY earned DESC
@@ -890,7 +890,7 @@ lib.callback.register('cipher-trucking:server:getAnalytics', function(src)
     -- Oldest-first so the sparkline reads left to right; the SQL has to sort
     -- newest-first to apply LIMIT, hence the reverse.
     local ratingRows = MySQL.query.await([[
-        SELECT trip_rating FROM cipher_trucking_deliveries
+        SELECT trip_rating FROM xs_trucking_deliveries
         WHERE citizenid = ? ORDER BY id DESC LIMIT 20
     ]], { cid }) or {}
 
@@ -919,7 +919,7 @@ end)
 -- The raw rows, newest first. Every payout modifier is returned separately
 -- so the NUI can itemise how the final number was reached instead of just
 -- restating it.
-lib.callback.register('cipher-trucking:server:getHistory', function(src)
+lib.callback.register('XS-Trucking:server:getHistory', function(src)
     local cid = Framework.GetCitizenId(src)
     if not cid then return {} end
     if not WaitForDB() then return {} end
@@ -930,7 +930,7 @@ lib.callback.register('cipher-trucking:server:getHistory', function(src)
                multistop_bonus_pct, rating_bonus_pct, spoiled, trip_rating,
                stop_count, xp, distance_m, duration_seconds,
                UNIX_TIMESTAMP(completed_at) AS completed_ts
-        FROM cipher_trucking_deliveries
+        FROM xs_trucking_deliveries
         WHERE citizenid = ? ORDER BY id DESC LIMIT ?
     ]], { cid, Config.Trucking.historyLimit or 40 }) or {}
 
@@ -942,17 +942,17 @@ lib.callback.register('cipher-trucking:server:getHistory', function(src)
     return rows
 end)
 
-lib.callback.register('cipher-trucking:server:getLeaderboard', function(src)
+lib.callback.register('XS-Trucking:server:getLeaderboard', function(src)
     if not WaitForDB() then return {} end
     local rows = MySQL.query.await(
-        'SELECT name, level, total_completed, total_earned FROM cipher_trucking_stats ORDER BY total_completed DESC LIMIT ?',
+        'SELECT name, level, total_completed, total_earned FROM xs_trucking_stats ORDER BY total_completed DESC LIMIT ?',
         { Config.Trucking.leaderboardLimit })
     return rows or {}
 end)
 
 -- Personal garage only (company_id IS NULL) — company-owned vehicles are
 -- listed via the Company tab's getCompany snapshot (Company.ListFleet).
-lib.callback.register('cipher-trucking:server:getGarage', function(src)
+lib.callback.register('XS-Trucking:server:getGarage', function(src)
     local cid = Framework.GetCitizenId(src)
     if not cid then
         return { owned = {}, shop = Config.Trucking.Shop, cash = 0, selectedTruck = nil, selectedTrailer = nil,
@@ -967,7 +967,7 @@ lib.callback.register('cipher-trucking:server:getGarage', function(src)
     end
 
     local owned = MySQL.query.await(
-        'SELECT * FROM cipher_trucking_owned WHERE citizenid = ? AND company_id IS NULL ORDER BY purchased_at ASC', { cid }) or {}
+        'SELECT * FROM xs_trucking_owned WHERE citizenid = ? AND company_id IS NULL ORDER BY purchased_at ASC', { cid }) or {}
 
     -- Decoded server-side into a `maint` field rather than shipping the raw
     -- JSON string: the NUI renders these as gauges in three separate places
@@ -1002,7 +1002,7 @@ end)
 
 -- Generic — buys either a truck or a trailer depending on the shop entry's
 -- `kind`, always personal (company purchases go through Company.BuyVehicle).
-lib.callback.register('cipher-trucking:server:buyVehicle', function(src, shopId)
+lib.callback.register('XS-Trucking:server:buyVehicle', function(src, shopId)
     local shopDef = findShopEntry(shopId)
     if not shopDef then return false, 'That is not for sale.' end
 
@@ -1013,17 +1013,17 @@ lib.callback.register('cipher-trucking:server:buyVehicle', function(src, shopId)
         return false, 'Not enough money.'
     end
 
-    local ok = Framework.RemoveMoney(src, Config.Trucking.payoutAccount, shopDef.price, 'cipher-trucking:buyVehicle')
+    local ok = Framework.RemoveMoney(src, Config.Trucking.payoutAccount, shopDef.price, 'XS-Trucking:buyVehicle')
     if not ok then return false, 'Payment failed.' end
 
-    MySQL.insert('INSERT INTO cipher_trucking_owned (citizenid, kind, model, label, `condition`) VALUES (?, ?, ?, ?, 100)',
+    MySQL.insert('INSERT INTO xs_trucking_owned (citizenid, kind, model, label, `condition`) VALUES (?, ?, ?, ?, 100)',
         { cid, shopDef.kind or 'truck', shopDef.model, shopDef.label })
 
     Framework.Notify(src, ('Purchased %s.'):format(shopDef.label), 'success')
     return true
 end)
 
-lib.callback.register('cipher-trucking:server:selectTruck', function(src, ownedId)
+lib.callback.register('XS-Trucking:server:selectTruck', function(src, ownedId)
     if not ownedId then
         selectedTruck[src] = nil
         return true
@@ -1041,7 +1041,7 @@ lib.callback.register('cipher-trucking:server:selectTruck', function(src, ownedI
     return true
 end)
 
-lib.callback.register('cipher-trucking:server:selectTrailer', function(src, ownedId)
+lib.callback.register('XS-Trucking:server:selectTrailer', function(src, ownedId)
     if not ownedId then
         selectedTrailer[src] = nil
         return true
@@ -1061,11 +1061,11 @@ end)
 -- Generic — repairs either a truck or a trailer. Personal vehicles are paid
 -- from your own cash; company vehicles are paid from the company treasury
 -- and need the manage_vehicles permission.
-lib.callback.register('cipher-trucking:server:repairVehicle', function(src, ownedId)
+lib.callback.register('XS-Trucking:server:repairVehicle', function(src, ownedId)
     local cid = Framework.GetCitizenId(src)
     if not cid then return false, 'No character loaded.' end
 
-    local owned = MySQL.single.await('SELECT * FROM cipher_trucking_owned WHERE id = ?', { ownedId })
+    local owned = MySQL.single.await('SELECT * FROM xs_trucking_owned WHERE id = ?', { ownedId })
     if not owned then return false, 'Vehicle not found.' end
     if owned.condition >= 100 then return false, 'Already in perfect condition.' end
 
@@ -1077,17 +1077,17 @@ lib.callback.register('cipher-trucking:server:repairVehicle', function(src, owne
         if not company or company.id ~= owned.company_id then return false, "Not your company's vehicle." end
         if company.bank < cost then return false, ('Repair costs $%d — treasury too low.'):format(cost) end
         company.bank = company.bank - cost
-        MySQL.update('UPDATE cipher_trucking_companies SET bank = bank - ? WHERE id = ?', { cost, company.id })
+        MySQL.update('UPDATE xs_trucking_companies SET bank = bank - ? WHERE id = ?', { cost, company.id })
     else
         if owned.citizenid ~= cid then return false, 'You do not own that vehicle.' end
         if Framework.GetMoney(src, Config.Trucking.payoutAccount) < cost then
             return false, ('Repair costs $%d — not enough money.'):format(cost)
         end
-        local ok = Framework.RemoveMoney(src, Config.Trucking.payoutAccount, cost, 'cipher-trucking:repairVehicle')
+        local ok = Framework.RemoveMoney(src, Config.Trucking.payoutAccount, cost, 'XS-Trucking:repairVehicle')
         if not ok then return false, 'Payment failed.' end
     end
 
-    MySQL.update('UPDATE cipher_trucking_owned SET `condition` = 100 WHERE id = ?', { ownedId })
+    MySQL.update('UPDATE xs_trucking_owned SET `condition` = 100 WHERE id = ?', { ownedId })
     Framework.Notify(src, ('Repaired for $%d.'):format(cost), 'success')
     return true
 end)
@@ -1096,7 +1096,7 @@ end)
 -- category (cost scales with the level being bought). Personal trucks pay
 -- from your own cash; company trucks pay from the treasury and need
 -- manage_vehicles. Trailers never get these (no engine/brakes/etc).
-lib.callback.register('cipher-trucking:server:upgradeVehicle', function(src, ownedId, upgradeId)
+lib.callback.register('XS-Trucking:server:upgradeVehicle', function(src, ownedId, upgradeId)
     local cid = Framework.GetCitizenId(src)
     if not cid then return false, 'No character loaded.' end
 
@@ -1106,7 +1106,7 @@ lib.callback.register('cipher-trucking:server:upgradeVehicle', function(src, own
     end
     if not upgradeDef then return false, 'Unknown upgrade.' end
 
-    local owned = MySQL.single.await('SELECT * FROM cipher_trucking_owned WHERE id = ?', { ownedId })
+    local owned = MySQL.single.await('SELECT * FROM xs_trucking_owned WHERE id = ?', { ownedId })
     if not owned then return false, 'Vehicle not found.' end
     if owned.kind ~= 'truck' then return false, 'Only trucks can be upgraded.' end
 
@@ -1129,17 +1129,17 @@ lib.callback.register('cipher-trucking:server:upgradeVehicle', function(src, own
         local company = Company.GetBySource(src)
         if company.bank < cost then return false, ('Costs $%d — treasury too low.'):format(cost) end
         company.bank = company.bank - cost
-        MySQL.update('UPDATE cipher_trucking_companies SET bank = bank - ? WHERE id = ?', { cost, company.id })
+        MySQL.update('UPDATE xs_trucking_companies SET bank = bank - ? WHERE id = ?', { cost, company.id })
     else
         if Framework.GetMoney(src, Config.Trucking.payoutAccount) < cost then
             return false, ('Costs $%d — not enough money.'):format(cost)
         end
-        local ok = Framework.RemoveMoney(src, Config.Trucking.payoutAccount, cost, 'cipher-trucking:upgradeVehicle')
+        local ok = Framework.RemoveMoney(src, Config.Trucking.payoutAccount, cost, 'XS-Trucking:upgradeVehicle')
         if not ok then return false, 'Payment failed.' end
     end
 
     upgrades[upgradeId] = nextLevel
-    MySQL.update('UPDATE cipher_trucking_owned SET upgrades = ? WHERE id = ?', { json.encode(upgrades), ownedId })
+    MySQL.update('UPDATE xs_trucking_owned SET upgrades = ? WHERE id = ?', { json.encode(upgrades), ownedId })
 
     Framework.Notify(src, ('%s upgraded to level %d.'):format(upgradeDef.label, nextLevel), 'success')
     return true
@@ -1172,7 +1172,7 @@ function ClearActiveJobFor(cid)
                 end
             end
 
-            TriggerClientEvent('cipher-trucking:client:cleanupVehicles', src)
+            TriggerClientEvent('XS-Trucking:client:cleanupVehicles', src)
             Framework.Notify(src, 'An admin cleared your active delivery.', 'inform')
             return true
         end

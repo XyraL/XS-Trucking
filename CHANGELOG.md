@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to **Cipher — Trucking**.
+All notable changes to **XS-Trucking**.
 
 ## [2.1.1] — 2026-07-31
 

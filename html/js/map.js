@@ -15,7 +15,7 @@
 // updatePlayerOnly / resetView, exactly what app.js already calls. Everything
 // behind those four names was replaced.
 // ─────────────────────────────────────────────────────────────
-const CipherMap = (() => {
+const XSMap = (() => {
     const MAP = {
         imageW: 4096,
         imageH: 6144,
