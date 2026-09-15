@@ -22,12 +22,14 @@ const XSMap = (() => {
         tileSize: 512,
         nativeZoom: 4,
         maxZoom: 6,
-        // The GTA world rectangle the render covers — same calibration as the
-        // MDT. If pins sit slightly off, nudge here.
-        // Calibrated against landmarks with known coordinates — the depot on
-    // Terminal Island, Sandy Shores airfield, Mount Chiliad, Paleto Bay. The
-    // old numbers put the trucking depot in the sea.
-    world: { minX: -4508, maxX: 5086, minY: -4891, maxY: 8317 },
+        // The GTA world rectangle this render covers. Fitted against the postal
+        // set that is drawn on the render itself — six postals from the north
+        // tip to LSIA, both coasts and dead centre, all land within two pixels.
+        //
+        // 9000 x 13500 is exactly 2:3, like the 4096 x 6144 image, so the pixels
+        // are square. Never nudge one axis on its own — doing that is what put
+        // players up to 300m out before.
+        world: { minX: -4140, maxX: 4860, minY: -5100, maxY: 8400 },
     };
 
     let _map = null;
