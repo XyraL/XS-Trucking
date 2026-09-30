@@ -823,6 +823,12 @@ local function paySide(src, cid, name, route, amount, xp, role, spot, illegal)
     MySQL.update.await('UPDATE xs_trucking_stats SET xp = ?, level = ?, total_earned = total_earned + ?, name = ? WHERE citizenid = ?',
         { newXp, Util.LevelForXp(newXp), amount, name, cid })
 
+    local biz = not illegal and amount > 0 and Business.ByCitizen(cid)
+    if biz then
+        local rep = Config.Business.repPerLoad / 2 * (1 + (Progress.Mod(cid, 'rep') + Business.Mods(biz).rep) / 100)
+        Business.AddRep(biz.id, math.floor(rep))
+    end
+
     logDelivery({
         cid, tostring(route.id), route.label, route.type, route.pay, amount, amount, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 100, #route.stops, xp, 0, 0, spot, route.id, role, illegal and 1 or 0,
