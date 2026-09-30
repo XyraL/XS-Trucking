@@ -162,6 +162,7 @@ const XS = (() => {
         close: '<path d="M6 6l12 12M18 6L6 18"/>',
         lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
         check: '<path d="M5 12l5 5L19 7"/>',
+        target: '<circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="1.6"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/>',
         flag: '<path d="M5 21V4M5 4h11l-2 4 2 4H5"/>',
         pin: '<path d="M12 21s-6-5.5-6-10a6 6 0 1 1 12 0c0 4.5-6 10-6 10z"/>',
         plus: '<path d="M12 5v14M5 12h14"/>',

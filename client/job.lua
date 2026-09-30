@@ -151,9 +151,9 @@ local function objective(state)
     end
     if state.role == 'escort' then
         if state.stage == 'return' then return 'Take the pilot car back to a trucking spot' end
-        return 'Stay close to the convoy until it delivers'
+        return state.guarded and 'Cover the truck and take out the guards' or 'Stay close to the convoy until it delivers'
     end
-    if state.stage == 'hookup' then return 'Back the truck up to the trailer and hitch it' end
+    if state.stage == 'hookup' then return state.guarded and 'Take out the guards and hitch the trailer' or 'Back the truck up to the trailer and hitch it' end
     if state.stage == 'enroute' then
         if #state.stops > 1 then return ('Deliver to drop %d of %d'):format(state.stop, #state.stops) end
         return 'Deliver the load'
@@ -189,7 +189,7 @@ local function applyStage(state)
     end
 
     if state.stage == 'hookup' then
-        routeBlip(state.target, 'Your trailer', 5)
+        routeBlip(state.target, state.guarded and 'Guarded trailer' or 'Your trailer', state.guarded and 1 or 5)
     elseif state.stage == 'enroute' then
         routeBlip(state.target, #state.stops > 1 and ('Drop %d of %d'):format(state.stop, #state.stops) or 'Drop point', state.illegal and 1 or 5)
     elseif state.stage == 'return' then

@@ -136,8 +136,8 @@ SENDERS['linden_outlawalert'] = function(a)
     })
 end
 
-function Dispatch.Alert(coords, street, extra)
-    local cfg = Config.Illegal.alert
+function Dispatch.Alert(coords, street, extra, preset)
+    local cfg = preset or Config.Illegal.alert
     local alert = {
         code = cfg.code, title = cfg.title,
         description = extra and ('%s %s'):format(cfg.description, extra) or cfg.description,

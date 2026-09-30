@@ -34,6 +34,7 @@ XS.Pages.loads = (() => {
         const crews = crewsFor(ctx, l.id);
         if (crews.length) return `<span class="chip green">${XS.icon('users')}${crews.reduce((s, c) => s + c.members.length, 0)} in crew</span>`;
         if (l.locked) return `<span class="chip">${XS.icon('lock')}Locked</span>`;
+        if (l.guards) return `<span class="chip red">${XS.icon('target')}Armed</span>`;
         if (l.illegal) return '<span class="chip red">Illegal</span>';
         if (l.hot) return `<span class="chip amber">${XS.icon('hot')}Hot</span>`;
         if (l.convoy) return `<span class="chip violet">Convoy ${l.convoy.max}</span>`;
@@ -86,26 +87,27 @@ XS.Pages.loads = (() => {
         return c.lead === ctx.board.me ? 'Everyone in? Roll out when you are ready.' : 'Waiting on the lead to roll out.';
     }
 
-    function seat(m, lead) {
-        const role = m.lead ? 'Lead driver' : m.role === 'escort' ? 'Escort' : 'Driver';
+    function seat(m, lead, word = 'Escort') {
+        const role = m.lead ? 'Lead driver' : m.role === 'escort' ? word : 'Driver';
         const kick = lead && !m.me ? `<button class="btn xs ghost" data-crew-kick="${m.source}">${XS.icon('close')}</button>` : '';
         return `<div class="seat on ${m.role}${m.me ? ' self' : ''}"><span class="si">${XS.icon(m.role === 'escort' ? 'shield' : 'truck')}</span>
             <div class="grow"><b>${XS.esc(m.name)}</b><small>${role}${m.me ? ' · you' : ''}</small></div>${kick}</div>`;
     }
 
-    function openSeat(role) {
-        return `<div class="seat ${role}"><span class="si">${XS.icon('plus')}</span><div class="grow"><b>Open</b><small>${role === 'escort' ? 'Escort' : 'Truck'}</small></div></div>`;
+    function openSeat(role, word = 'Escort') {
+        return `<div class="seat ${role}"><span class="si">${XS.icon('plus')}</span><div class="grow"><b>Open</b><small>${role === 'escort' ? word : 'Truck'}</small></div></div>`;
     }
 
     function crewCard(ctx, c, l) {
+        const word = l.guards ? 'Gunner' : 'Escort';
         const lead = c.lead === ctx.board.me;
         const drivers = c.members.filter((m) => m.role === 'driver');
         const escorts = c.members.filter((m) => m.role === 'escort');
         const seats = [
             ...drivers.map((m) => seat(m, lead)),
             ...Array.from({ length: Math.max(0, c.maxDrivers - drivers.length) }, () => openSeat('driver')),
-            ...escorts.map((m) => seat(m, lead)),
-            ...Array.from({ length: Math.max(0, c.maxEscorts - escorts.length) }, () => openSeat('escort')),
+            ...escorts.map((m) => seat(m, lead, word)),
+            ...Array.from({ length: Math.max(0, c.maxEscorts - escorts.length) }, () => openSeat('escort', word)),
         ].join('');
 
         let foot = '';
@@ -115,7 +117,7 @@ XS.Pages.loads = (() => {
             const drive = c.drivers < c.maxDrivers;
             const escort = c.escorts < c.maxEscorts;
             if (drive && !l.locked) foot += `<button class="btn sm primary" data-crew-join="${c.id}" data-role="driver">${XS.icon('truck')}Join as driver</button>`;
-            if (escort) foot += `<button class="btn sm" data-crew-join="${c.id}" data-role="escort">${XS.icon('shield')}Join as escort</button>`;
+            if (escort) foot += `<button class="btn sm" data-crew-join="${c.id}" data-role="escort">${XS.icon(l.guards ? 'target' : 'shield')}Join as ${word.toLowerCase()}</button>`;
             if (drive && l.locked) foot += `<span class="dim" style="font-size:12px">Driving it needs ${XS.esc(l.locked)}.</span>`;
             if (!drive && !escort) foot = '<span class="dim" style="font-size:12px">This crew is full.</span>';
         }
@@ -133,7 +135,7 @@ XS.Pages.loads = (() => {
         const t = ctx.board.coop || {};
         const out = [];
         if (l.convoy) out.push(`+${t.convoyBonus}% per extra truck`);
-        if (l.escorts > 0) out.push(`escorts earn ${t.escortCut}%`);
+        if (l.escorts > 0) out.push(`${l.guards ? 'gunners' : 'escorts'} earn ${t.escortCut}%`);
         return out.join(' · ');
     }
 
@@ -150,7 +152,7 @@ XS.Pages.loads = (() => {
         } else if (here.length) {
             body = here.map((c) => crewCard(ctx, c, l)).join('');
         } else {
-            const how = l.convoy ? `up to ${l.convoy.max} trucks roll out together` : 'your escort rolls out with you';
+            const how = l.convoy ? `up to ${l.convoy.max} trucks roll out together` : l.guards ? 'your gunners roll out with you' : 'your escort rolls out with you';
             body = `<div class="crew none"><span class="dim">No crew yet. Start one and ${how}. Anyone joining has to be at this laptop.</span></div>`;
         }
         return `<div class="col" style="gap:8px"><div class="row between"><span class="kicker">Co-op</span><span class="dim" style="font-size:12px">${XS.esc(coopTerms(ctx, l))}</span></div>${body}</div>`;
@@ -214,7 +216,8 @@ XS.Pages.loads = (() => {
                 <div class="tile"><small>About</small><b>${l.minutes} min</b></div>
                 <div class="tile"><small>XP</small><b>+${XS.num(l.xp)}</b></div></div>
             <div class="reqs">${reqs.join('')}</div>
-            ${l.illegal ? `<div class="banner red">${XS.icon('warn')}<div class="grow"><b>Someone might call it in.</b><div class="dim" style="font-size:12px">Each run adds heat, and heat makes a tip-off more likely.</div></div></div>${heatBar(p.heat || 0)}` : ''}
+            ${l.guards ? `<div class="banner red">${XS.icon('target')}<div class="grow"><b>${l.guards.count} armed guard${l.guards.count === 1 ? '' : 's'} at the pickup</b><div class="dim" style="font-size:12px">${XS.esc(l.guards.weapon)} · ${XS.esc(l.guards.armour)} armour · ${XS.esc(l.guards.accuracy)} aim. Take them out, then hitch the trailer. Shots bring the police.</div></div></div>${heatBar(p.heat || 0)}` : ''}
+            ${l.illegal && !l.guards ? `<div class="banner red">${XS.icon('warn')}<div class="grow"><b>Someone might call it in.</b><div class="dim" style="font-size:12px">Each run adds heat, and heat makes a tip-off more likely.</div></div></div>${heatBar(p.heat || 0)}` : ''}
             ${crewSection(ctx, l)}
             ${notes.join('')}
             <div class="money">
@@ -240,10 +243,10 @@ XS.Pages.loads = (() => {
             const tone = toneFor(l);
             const label = `${l.label} · ${XS.money(l.pay)}`;
             if (l.id !== selected) {
-                out.push({ type: 'load', x: l.stops[0].x, y: l.stops[0].y, tone, label, pick: l.id });
+                out.push({ type: 'load', x: l.stops[0].x, y: l.stops[0].y, tone, label, pick: l.id, icon: l.guards ? 'target' : null });
                 continue;
             }
-            if (l.remotePickup && l.origin) out.push({ type: 'pickup', x: l.origin.x, y: l.origin.y, tone, icon: 'pin', label: 'Trailer pickup', pick: l.id });
+            if (l.remotePickup && l.origin) out.push({ type: 'pickup', x: l.origin.x, y: l.origin.y, tone, icon: l.guards ? 'target' : 'pin', label: l.guards ? 'Guarded trailer' : 'Trailer pickup', pick: l.id });
             l.stops.forEach((s, i) => out.push({
                 type: 'drop', x: s.x, y: s.y, tone, active: true, pick: l.id, bubble: i === 0,
                 number: l.stops.length > 1 ? i + 1 : null, label: `Drop ${i + 1}`,
@@ -467,7 +470,9 @@ XS.Pages.loads = (() => {
             if (take) {
                 const l = ctx.board.loads.find((x) => x.id === Number(take.dataset.take));
                 if (l && l.illegal) {
-                    const sure = await XS.ask({ title: 'Take an illegal load?', text: 'The police might get a tip about your truck. Heat builds with every run.', confirm: 'Take it', danger: true });
+                    const sure = await XS.ask(l.guards
+                        ? { title: 'Hit a guarded trailer?', text: 'Armed guards protect it and shots bring the police. Heat builds with every run.', confirm: 'Hit it', danger: true }
+                        : { title: 'Take an illegal load?', text: 'The police might get a tip about your truck. Heat builds with every run.', confirm: 'Take it', danger: true });
                     if (!sure) return;
                 }
                 take.classList.add('off');

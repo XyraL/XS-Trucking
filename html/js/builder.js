@@ -30,7 +30,7 @@ XS.Builder = (() => {
         return {
             spot: spotId ?? (data.spots[0] ? data.spots[0].id : 0), label: 'New route', cargo: '', type: 'dryvan', model: '',
             weight: 12, pickup: null, stops: [], pay: 400, xp: 50, level: 1, cert: null, timer: 0, convoy: null,
-            escorts: 0, illegal: false, fragile: false, enabled: true,
+            escorts: 0, illegal: false, fragile: false, guards: null, enabled: true,
         };
     }
 
@@ -99,6 +99,29 @@ XS.Builder = (() => {
             <div class="dim" style="font-size:12px">Leave return bays empty and trucks come back to the truck bays.</div>`;
     }
 
+    function guardSection(d) {
+        const g = data.meta.guards;
+        const ready = d.illegal && d.pickup;
+        const opts = (list, value) => list.map((o) => `<option value="${o.id}" ${o.id === value ? 'selected' : ''}>${XS.esc(o.label)}</option>`).join('');
+        let body;
+        if (!d.illegal) body = '<div class="dim" style="font-size:12px">Only illegal routes can have armed guards.</div>';
+        else if (!d.pickup) body = '<div class="dim" style="font-size:12px">Guards stand around the trailer at its pickup point. Turn on the pickup above first.</div>';
+        else if (!d.guards) body = '<div class="dim" style="font-size:12px">Off: nobody guards the trailer.</div>';
+        else {
+            body = `<div class="fgrid">
+                    <div class="fcell"><span class="label">Guards</span><select class="field" data-f="guards.count">${Array.from({ length: g.max }, (_, i) => i + 1).map((n) => `<option ${n === d.guards.count ? 'selected' : ''}>${n}</option>`).join('')}</select></div>
+                    <div class="fcell"><span class="label">Weapons</span><select class="field" data-f="guards.weapon">${opts(g.weapons, d.guards.weapon)}</select></div>
+                    <div class="fcell"><span class="label">Armour</span><select class="field" data-f="guards.armour">${opts(g.armour, d.guards.armour)}</select></div>
+                    <div class="fcell"><span class="label">Aim</span><select class="field" data-f="guards.accuracy">${opts(g.accuracy, d.guards.accuracy)}</select></div>
+                </div>
+                <div class="dim" style="font-size:12px">They show up when someone on the run gets close and shoot anyone who comes near. Shots bring the police. The route rests for a while after each run.</div>`;
+        }
+        return `<div class="section"><div class="row between"><h3>Armed guards</h3>
+                <label class="check"><input type="checkbox" data-f="hasGuards" ${d.guards ? 'checked' : ''} ${ready ? '' : 'disabled'}><i></i>Guards at the pickup</label></div>
+            ${body}
+        </div>`;
+    }
+
     function routeForm() {
         const d = draft;
         const kind = typeInfo(d.type);
@@ -143,13 +166,14 @@ XS.Builder = (() => {
                 <div class="row wrap" style="gap:18px">
                     <label class="check"><input type="checkbox" data-f="fragile" ${d.fragile ? 'checked' : ''}><i></i>Fragile</label>
                     ${data.meta.illegal ? `<label class="check"><input type="checkbox" data-f="illegal" ${d.illegal ? 'checked' : ''}><i></i>Illegal</label>` : ''}
-                    ${data.meta.convoy ? `<label class="check"><input type="checkbox" data-f="hasConvoy" ${d.convoy ? 'checked' : ''}><i></i>Convoy</label>` : ''}
+                    ${data.meta.convoy && !d.guards ? `<label class="check"><input type="checkbox" data-f="hasConvoy" ${d.convoy ? 'checked' : ''}><i></i>Convoy</label>` : ''}
                 </div>
                 <div class="fgrid">
                     ${d.convoy ? `<div class="fcell"><span class="label">Most trucks</span><select class="field" data-f="convoy.max">${[2, 3, 4].filter((n) => n <= data.meta.convoy).map((n) => `<option ${n === d.convoy.max ? 'selected' : ''}>${n}</option>`).join('')}</select></div>` : ''}
-                    ${data.meta.escorts ? `<div class="fcell"><span class="label">Escorts</span><select class="field" data-f="escorts">${[0, 1, 2, 3].map((n) => `<option ${n === d.escorts ? 'selected' : ''}>${n}</option>`).join('')}</select></div>` : ''}
+                    ${data.meta.escorts ? `<div class="fcell"><span class="label">${d.guards ? 'Gunners (optional)' : 'Escorts'}</span><select class="field" data-f="escorts">${[0, 1, 2, 3].map((n) => `<option ${n === d.escorts ? 'selected' : ''}>${n}</option>`).join('')}</select></div>` : ''}
                 </div>
-            </div>`;
+            </div>
+            ${data.meta.guards ? guardSection(d) : ''}`;
     }
 
     function actions() {
@@ -331,6 +355,15 @@ XS.Builder = (() => {
         if (f === 'hasPickup') {
             if (value) return place('pickup');
             draft.pickup = null;
+            draft.guards = null;
+            dirty = true;
+            return paint();
+        }
+        if (f === 'hasGuards') {
+            const g = data.meta.guards;
+            const has = (list, id) => (list.find((o) => o.id === id) || list[0]).id;
+            draft.guards = value ? { count: 6, weapon: has(g.weapons, 'smg'), armour: has(g.armour, 'light'), accuracy: has(g.accuracy, 'medium') } : null;
+            if (value) draft.convoy = null;
             dirty = true;
             return paint();
         }
@@ -340,8 +373,9 @@ XS.Builder = (() => {
             return paint();
         }
 
-        if (t.type === 'number' || ['convoy.max', 'escorts', 'spot'].includes(f)) value = Number(value) || 0;
+        if (t.type === 'number' || ['convoy.max', 'escorts', 'spot', 'guards.count'].includes(f)) value = Number(value) || 0;
         setField(f, value);
+        if (f === 'illegal' && !value) draft.guards = null;
         if (f === 'type') draft.model = '';
         if (['type', 'spot', 'illegal'].includes(f)) paint();
         else {

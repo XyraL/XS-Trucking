@@ -440,6 +440,53 @@ Config.Illegal = {
     },
 }
 
+-- ── Armed guards ───────────────────────────────────────────────────────────
+-- Illegal routes with a pickup point can have armed guards around the
+-- trailer. How many there are, their weapons, armour and aim are set per
+-- route in /truckingbuilder. Guards show up when someone on the run gets
+-- close and shoot any player who comes near.
+Config.Guards = {
+    enabled = true,
+    spawnDistance = 250.0,     -- metres from the pickup when the guards appear
+    maxGuards = 12,
+    cooldownMinutes = 20,      -- a guarded route rests this long after each run
+    heat = 15,                 -- extra heat on top of the normal illegal heat
+
+    models = {
+        's_m_y_blackops_01', 's_m_y_blackops_02', 'g_m_m_armgoon_01',
+        'g_m_y_mexgoon_02', 's_m_m_highsec_01', 'g_m_y_lost_01',
+    },
+
+    -- The choices shown in the builder.
+    weapons = {
+        { id = 'pistol', label = 'Pistols', list = { 'WEAPON_PISTOL', 'WEAPON_COMBATPISTOL' } },
+        { id = 'smg', label = 'SMGs', list = { 'WEAPON_SMG', 'WEAPON_MICROSMG' } },
+        { id = 'shotgun', label = 'Shotguns', list = { 'WEAPON_PUMPSHOTGUN', 'WEAPON_SAWNOFFSHOTGUN' } },
+        { id = 'rifle', label = 'Rifles', list = { 'WEAPON_CARBINERIFLE', 'WEAPON_ASSAULTRIFLE' } },
+        { id = 'mixed', label = 'Mixed', list = { 'WEAPON_PISTOL', 'WEAPON_SMG', 'WEAPON_PUMPSHOTGUN', 'WEAPON_CARBINERIFLE' } },
+    },
+    armour = {
+        { id = 'none', label = 'None', value = 0 },
+        { id = 'light', label = 'Light', value = 50 },
+        { id = 'heavy', label = 'Heavy', value = 100 },
+    },
+    accuracy = {
+        { id = 'low', label = 'Low', value = 20 },
+        { id = 'medium', label = 'Medium', value = 40 },
+        { id = 'high', label = 'High', value = 65 },
+    },
+
+    -- Sent through the dispatch bridge when the shooting starts.
+    alert = {
+        code = '10-71',
+        title = 'Shots Fired',
+        description = 'Gunfire at a truck yard. Several armed men on scene.',
+        sprite = 110,
+        colour = 1,
+        seconds = 300,
+    },
+}
+
 -- ── Businesses ─────────────────────────────────────────────────────────────
 Config.Business = {
     enabled = true,

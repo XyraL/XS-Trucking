@@ -75,6 +75,22 @@ local function normalizeRoute(draft)
         convoy = { min = math.floor(Util.Clamp(draft.convoy.min, 1, max)), max = max }
     end
 
+    local guards
+    local cfg = Config.Guards
+    if type(draft.guards) == 'table' and draft.illegal == true and cfg and cfg.enabled then
+        if not Util.Point(draft.pickup) then return nil, 'Armed guards stand at the pickup point. Turn on the pickup and place it.' end
+        local function option(list, id, fallback)
+            return (Util.Find(list, id) or Util.Find(list, fallback) or list[1]).id
+        end
+        guards = {
+            count = math.floor(Util.Clamp(draft.guards.count or 6, 1, cfg.maxGuards)),
+            weapon = option(cfg.weapons, draft.guards.weapon, 'smg'),
+            armour = option(cfg.armour, draft.guards.armour, 'light'),
+            accuracy = option(cfg.accuracy, draft.guards.accuracy, 'medium'),
+        }
+        convoy = nil
+    end
+
     return {
         spot = spot,
         label = label,
@@ -93,6 +109,7 @@ local function normalizeRoute(draft)
         escorts = Config.Coop.escort.enabled and math.floor(Util.Clamp(draft.escorts or 0, 0, 3)) or 0,
         illegal = draft.illegal == true,
         fragile = draft.fragile == true,
+        guards = guards,
         enabled = draft.enabled ~= false,
     }
 end
@@ -134,6 +151,7 @@ local function routeData(route)
         cargo = route.cargo, type = route.type, model = route.model, weight = route.weight, pickup = route.pickup,
         stops = route.stops, pay = route.pay, xp = route.xp, level = route.level, cert = route.cert,
         timer = route.timer, convoy = route.convoy, escorts = route.escorts, illegal = route.illegal, fragile = route.fragile,
+        guards = route.guards,
     })
 end
 
@@ -316,9 +334,10 @@ function Spots.SuggestPay(route, origin)
     local km = Util.RouteLength(route, origin) / 1000
     local mult = cfg.types[route.type] or 1.0
     local stops = math.max(0, #(route.stops or {}) - 1)
+    local risk = route.guards and (1.4 + (tonumber(route.guards.count) or 6) * 0.06) or 1
     return {
         km = Util.Round(km, 2),
-        pay = math.floor((cfg.base + km * cfg.perKm) * mult * (1 + stops * 0.1) / 10 + 0.5) * 10,
+        pay = math.floor((cfg.base + km * cfg.perKm) * mult * risk * (1 + stops * 0.1) / 10 + 0.5) * 10,
         xp = math.floor((20 + km * cfg.xpPerKm) * mult),
     }
 end

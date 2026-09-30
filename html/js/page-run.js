@@ -28,8 +28,8 @@ XS.Pages.run = (() => {
 
     function objective(run) {
         if (run.role === 'codriver') return run.stage === 'return' ? `Riding back with ${run.driverName}` : `Riding with ${run.driverName}`;
-        if (run.role === 'escort') return run.stage === 'escort' ? 'Keep the convoy safe' : 'Bring the pilot car back';
-        if (run.stage === 'hookup') return 'Hitch the trailer';
+        if (run.role === 'escort') return run.stage === 'escort' ? (run.guarded ? 'Cover the truck' : 'Keep the convoy safe') : 'Bring the pilot car back';
+        if (run.stage === 'hookup') return run.guarded ? 'Take out the guards' : 'Hitch the trailer';
         if (run.stage === 'enroute') return run.stops.length > 1 ? `Deliver drop ${run.stop} of ${run.stops.length}` : 'Deliver the load';
         return 'Bring the truck back';
     }
@@ -40,12 +40,15 @@ XS.Pages.run = (() => {
                 ? 'The load is off. You are paid when the truck is handed back.'
                 : 'Stay in the cab until the last drop. You are paid when the truck is handed back.';
         }
+        if (run.role === 'escort' && run.guarded && run.stage === 'escort') {
+            return `Guards shoot anyone who comes near the trailer. Stay within ${XS.metres(run.escortRange)} of the truck for ${run.escortPresence}% of the job to be paid in full.`;
+        }
         if (run.role === 'escort') {
             return run.stage === 'escort'
                 ? `Stay within ${XS.metres(run.escortRange)} of a truck for ${run.escortPresence}% of the trip to be paid in full.`
                 : 'Park it in a return bay at any trucking spot and press E to get paid.';
         }
-        if (run.stage === 'hookup') return 'Back the truck under the trailer. It hitches on its own.';
+        if (run.stage === 'hookup') return run.guarded ? 'Armed guards stand around the trailer. Take them out, then back under it and it hitches on its own.' : 'Back the truck under the trailer. It hitches on its own.';
         if (run.stage === 'enroute') return 'Reverse the trailer into the drop zone and press E. Line it up with the arrow for a Dock Master bonus.';
         return 'Park in a return bay at any trucking spot and press E to get paid.';
     }
@@ -72,6 +75,7 @@ XS.Pages.run = (() => {
         if (run.deadline) out.push(['clock', 'It gets there before the timer runs out. Late loads pay less.']);
         if (run.fragile) out.push(['warn', 'It stays in one piece. Every knock on a fragile load costs pay.']);
         out.push(['shield', 'You drive clean. Damage lowers your rating, and a high rating pays a bonus on every load.']);
+        if (run.guarded) out.push(['target', 'Your crew covers you at the pickup. Gunners who stay close all the way get paid in full.']);
         if (run.illegal) out.push(['warn', 'Nobody reports it. If they do, keep moving and lose the police before the drop.']);
         if (run.stage === 'return') out.push(['check', 'You park in any trucking spot\'s return bays. That is when you get paid.']);
         return out;
@@ -129,7 +133,7 @@ XS.Pages.run = (() => {
         const tone = run.illegal ? 'red' : 'cyan';
         const out = [{ type: 'depot', x: laptop.x, y: laptop.y, icon: 'loads', tone: home ? 'green' : 'white', active: home, label: ctx.board.spot.name }];
         if (run.stage === 'hookup' && run.target) {
-            out.push({ type: 'pickup', x: run.target.x, y: run.target.y, icon: 'pin', tone: 'amber', active: true, label: 'Your trailer' });
+            out.push({ type: 'pickup', x: run.target.x, y: run.target.y, icon: run.guarded ? 'target' : 'pin', tone: run.guarded ? 'red' : 'amber', active: true, label: run.guarded ? 'Guarded trailer' : 'Your trailer' });
         }
         run.stops.forEach((s, i) => {
             const n = i + 1;

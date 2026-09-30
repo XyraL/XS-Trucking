@@ -82,6 +82,13 @@ function Util.AngleDiff(a, b)
     return d > 180 and 360 - d or d
 end
 
+function Util.Find(list, id)
+    for _, entry in ipairs(list or {}) do
+        if entry.id == id then return entry end
+    end
+    return nil
+end
+
 function Util.TrailerType(id)
     for _, entry in ipairs(Config.TrailerTypes) do
         if entry.id == id then return entry end

@@ -28,6 +28,7 @@ client_scripts {
     'client/main.lua',
     'client/placement.lua',
     'client/job.lua',
+    'client/guards.lua',
     'client/builder.lua',
 }
 

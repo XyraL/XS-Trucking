@@ -12,6 +12,12 @@ local function guarded(name, fn)
     end)
 end
 
+local function choices(list)
+    local out = {}
+    for i, entry in ipairs(list or {}) do out[i] = { id = entry.id, label = entry.label } end
+    return out
+end
+
 local function builderData()
     local data = Spots.Builder()
     local types = {}
@@ -25,6 +31,10 @@ local function builderData()
         types = types, certs = certs, maxLevel = Config.Levels.max, depotTruck = Config.Trucks.depot.model,
         convoy = Config.Coop.convoy.enabled and Config.Coop.convoy.maxTrucks or 0, escorts = Config.Coop.escort.enabled,
         illegal = Config.Illegal.enabled, suggest = Config.Pay.suggest,
+        guards = Config.Guards and Config.Guards.enabled and {
+            max = Config.Guards.maxGuards,
+            weapons = choices(Config.Guards.weapons), armour = choices(Config.Guards.armour), accuracy = choices(Config.Guards.accuracy),
+        } or false,
     }
     return data
 end
@@ -68,6 +78,7 @@ guarded('suggestPay', function(_, draft)
         type = Util.TrailerType(draft.type) and draft.type or 'dryvan',
         pickup = Util.Point(draft.pickup),
         stops = Util.Points(draft.stops, 8),
+        guards = draft.illegal == true and type(draft.guards) == 'table' and draft.guards or nil,
     }
     if #route.stops == 0 then return nil end
     local origin = route.pickup or (spot and spot.trailerBays[1]) or nil

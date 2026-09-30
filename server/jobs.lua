@@ -1,6 +1,7 @@
 Jobs = { active = {}, convoys = {}, riders = {} }
 
 local cooldown = {}
+local guardRest = {}
 local bayUse = {}
 local hot, hotAt = {}, 0
 local runSeq = 0
@@ -107,13 +108,29 @@ local function lockReason(route, profile, cid)
         if profile.level < Config.Illegal.level then return ('Level %d'):format(Config.Illegal.level) end
         if profile.heat >= Config.Illegal.blockAt then return 'Too much heat' end
     end
+    if route.guards then
+        if Jobs.RouteBusy(route.id) then return 'Being hit right now' end
+        local rest = (guardRest[route.id] or 0) - os.time()
+        if rest > 0 then return ('Guards back in %d min'):format(math.ceil(rest / 60)) end
+    end
     return nil
 end
 
 Jobs.LockReason = lockReason
 
 local function needsEscort(route)
-    return Config.Coop.escort.enabled and Config.Coop.escort.required and (route.escorts or 0) > 0
+    return not route.guards and Config.Coop.escort.enabled and Config.Coop.escort.required and (route.escorts or 0) > 0
+end
+
+local function guardInfo(route)
+    local set, cfg = route.guards, Config.Guards
+    if not set or not cfg then return nil end
+    return {
+        count = set.count,
+        weapon = (Util.Find(cfg.weapons, set.weapon) or {}).label,
+        armour = (Util.Find(cfg.armour, set.armour) or {}).label,
+        accuracy = (Util.Find(cfg.accuracy, set.accuracy) or {}).label,
+    }
 end
 
 local function publicLoad(route, spot, profile, cid)
@@ -144,6 +161,7 @@ local function publicLoad(route, spot, profile, cid)
         convoy = route.convoy,
         escorts = route.escorts,
         needsEscort = needsEscort(route),
+        guards = guardInfo(route),
         illegal = route.illegal,
         fragile = route.fragile,
         hot = hot[route.id] == true,
@@ -281,6 +299,8 @@ local function stateFor(job, viewer)
         truckLabel = job.truck.label,
         plate = job.truck.plate,
         tipped = job.tipped == true,
+        guarded = route.guards ~= nil,
+        site = route.guards and route.pickup and { x = route.pickup.x, y = route.pickup.y, z = route.pickup.z } or nil,
         convoy = job.convoy,
         crew = crewFor(job),
         leadNet = lead and lead.truck.net or nil,
@@ -390,7 +410,7 @@ local function spawnDriver(src, cid, spot, route, hour, convoyId)
     if not truckPoint then return nil, 'Every truck bay is blocked. Clear one and try again.' end
 
     local trailerPoint
-    if route.pickup and not convoyId then
+    if route.pickup and not (convoyId and route.convoy) then
         trailerPoint = route.pickup
         if not pointFree(trailerPoint) then return nil, 'Something is parked on the pickup point.' end
     else
@@ -587,6 +607,93 @@ function Jobs.StartCrew(lobby)
     return true, convoyId
 end
 
+local function participants(job)
+    local out = { job.src }
+    if job.codriver then out[#out + 1] = job.codriver.src end
+    local convoy = job.convoy and Jobs.convoys[job.convoy]
+    if convoy then
+        for src in pairs(convoy.members) do
+            if src ~= job.src then out[#out + 1] = src end
+        end
+    end
+    return out
+end
+
+local function crewNear(job, distance)
+    for _, src in ipairs(participants(job)) do
+        local where = coords(GetPlayerPed(src))
+        if where and Util.Distance2D(where, job.trailerPoint) <= distance then return true end
+    end
+    return false
+end
+
+local function spawnGuards(job)
+    local cfg, set = Config.Guards, job.route.guards
+    local weapons = (Util.Find(cfg.weapons, set.weapon) or cfg.weapons[1]).list
+    local armour = (Util.Find(cfg.armour, set.armour) or cfg.armour[1]).value
+    local accuracy = (Util.Find(cfg.accuracy, set.accuracy) or cfg.accuracy[1]).value
+    local site = job.trailerPoint
+    job.guards = {}
+
+    for i = 1, set.count do
+        local angle = (i / set.count) * math.pi * 2 + math.random() * 0.5
+        local radius = 6.0 + (i % 3) * 4.5
+        local x, y = site.x + math.cos(angle) * radius, site.y + math.sin(angle) * radius
+        local ped = CreatePed(4, joaat(cfg.models[math.random(#cfg.models)]), x, y, site.z + 0.5, math.deg(angle) - 90.0, true, true)
+        local waited = 0
+        while (not ped or ped == 0 or not DoesEntityExist(ped)) and waited < 3000 do
+            Wait(50)
+            waited = waited + 50
+        end
+        if ped and ped ~= 0 and DoesEntityExist(ped) then
+            pcall(SetEntityOrphanMode, ped, 2)
+            GiveWeaponToPed(ped, joaat(weapons[math.random(#weapons)]), 999, false, true)
+            if armour > 0 then SetPedArmour(ped, armour) end
+            Entity(ped).state:set('xsGuard', { run = job.id, accuracy = accuracy }, true)
+            job.guards[#job.guards + 1] = ped
+        end
+    end
+end
+
+local function clearGuards(job)
+    for _, ped in ipairs(job.guards or {}) do remove(ped) end
+    job.guards = nil
+end
+
+local function endGuards(job)
+    clearGuards(job)
+    if job.role == 'driver' and job.route.guards then
+        guardRest[job.route.id] = os.time() + (Config.Guards.cooldownMinutes or 0) * 60
+    end
+end
+
+local function alarm(job)
+    if job.alarmed or not job.guardsOut then return end
+    job.alarmed = true
+    local alert = Config.Guards.alert
+    if not alert then return end
+    local street = lib.callback.await('XS-Trucking:client:street', job.src, job.trailerPoint) or ''
+    Dispatch.Alert(job.trailerPoint, street, nil, alert)
+end
+
+local function guardedJobFor(src)
+    local job = Jobs.active[src]
+    if job and job.role == 'escort' then
+        local convoy = job.convoy and Jobs.convoys[job.convoy]
+        job = nil
+        for member, info in pairs(convoy and convoy.members or {}) do
+            local other = Jobs.active[member]
+            if info.role == 'driver' and other and other.convoy == convoy.id then
+                job = other
+                break
+            end
+        end
+    elseif not job and Jobs.riders[src] then
+        job = Jobs.active[Jobs.riders[src]]
+    end
+    return job and job.role == 'driver' and job.route.guards and job or nil
+end
+
 local function tipOff(job)
     if job.tipped then return end
     job.tipped = true
@@ -622,6 +729,7 @@ function Jobs.Hooked(src)
 
     job.stage = 'enroute'
     job.hookedAt = os.time()
+    if job.route.guards then alarm(job) end
 
     if job.route.illegal then rollTip(job, Progress.Stats(job.cid)) end
     if job.convoy then pushConvoy(Jobs.convoys[job.convoy]) else push(job) end
@@ -912,6 +1020,7 @@ local function finish(job, fuel)
         end
         Progress.AddHeat(cid, math.floor(SGet('illegal.heatPerRun', Config.Illegal.heatPerRun)
             * (1 - math.min(Progress.Mod(cid, 'heatGain'), 90) / 100)))
+        if route.guards then Progress.AddHeat(cid, Config.Guards.heat or 0) end
     else
         Framework.AddMoney(src, Config.Payout.account, driverPay, 'XS-Trucking:load')
     end
@@ -939,6 +1048,7 @@ local function finish(job, fuel)
 
     remove(job.truck.entity)
     if not job.trailer.gone then remove(job.trailer.entity) end
+    endGuards(job)
 
     local summary = {
         label = route.label, cargo = route.cargo, base = result.base, total = result.total, driver = driverPay,
@@ -1021,6 +1131,7 @@ drop = function(job, reason, message)
     Jobs.active[job.src] = nil
     remove(job.truck.entity)
     if not job.trailer.gone then remove(job.trailer.entity) end
+    endGuards(job)
     TriggerClientEvent('XS-Trucking:client:runEnded', job.src, reason, { message = message })
 
     if job.codriver then
@@ -1140,7 +1251,7 @@ CreateThread(function()
                 local moving = {}
                 for src, member in pairs(convoy.members) do
                     local job = Jobs.active[src]
-                    if member.role == 'driver' and job and job.convoy == id and job.stage == 'enroute' then
+                    if member.role == 'driver' and job and job.convoy == id and (job.stage == 'enroute' or (job.stage == 'hookup' and job.route.guards)) then
                         moving[#moving + 1] = coords(job.truck.entity)
                     end
                 end
@@ -1180,9 +1291,35 @@ AddEventHandler('playerDropped', function()
     cooldown[src] = nil
 end)
 
+CreateThread(function()
+    while true do
+        Wait(1000)
+        local list = {}
+        for _, job in pairs(Jobs.active) do
+            if job.role == 'driver' and job.route.guards then list[#list + 1] = job end
+        end
+        for _, job in ipairs(list) do
+            if Jobs.active[job.src] == job then
+                if not job.guardsOut and job.stage == 'hookup' and crewNear(job, Config.Guards.spawnDistance) then
+                    job.guardsOut = true
+                    spawnGuards(job)
+                elseif job.guards and job.stage ~= 'hookup' and not crewNear(job, 400.0) then
+                    clearGuards(job)
+                end
+            end
+        end
+    end
+end)
+
+RegisterNetEvent('XS-Trucking:server:guardsAlarm', function()
+    local job = guardedJobFor(source)
+    if job then alarm(job) end
+end)
+
 AddEventHandler('onResourceStop', function(resource)
     if resource ~= GetCurrentResourceName() then return end
     for _, job in pairs(Jobs.active) do
+        clearGuards(job)
         remove(job.truck.entity)
         if not job.trailer.gone then remove(job.trailer.entity) end
     end

@@ -41,7 +41,7 @@ local function public(lobby, viewer)
         return a.source < b.source
     end)
 
-    local needEscorts = Config.Coop.escort.required and escorts or 0
+    local needEscorts = Config.Coop.escort.required and not route.guards and escorts or 0
     return {
         id = lobby.id, route = lobby.route, spot = lobby.spot, lead = lobby.lead, leadName = lobby.members[lobby.lead] and lobby.members[lobby.lead].name or '',
         members = members, drivers = drivers, maxDrivers = maxDrivers, minDrivers = minDrivers,
