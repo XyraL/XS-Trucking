@@ -132,7 +132,7 @@ local TABLES = {
             `permissions` LONGTEXT NOT NULL,
             `cut` INT NOT NULL DEFAULT 60,
             PRIMARY KEY (`company_id`, `grade`),
-            CONSTRAINT `fk_company_ranks_company` FOREIGN KEY (`company_id`)
+            FOREIGN KEY (`company_id`)
                 REFERENCES `xs_trucking_companies` (`id`) ON DELETE CASCADE
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     ]],
@@ -148,7 +148,7 @@ local TABLES = {
             `last_seen` BIGINT NOT NULL DEFAULT 0,
             PRIMARY KEY (`citizenid`),
             KEY `idx_company` (`company_id`),
-            CONSTRAINT `fk_company_members_company` FOREIGN KEY (`company_id`)
+            FOREIGN KEY (`company_id`)
                 REFERENCES `xs_trucking_companies` (`id`) ON DELETE CASCADE
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     ]],
@@ -158,7 +158,7 @@ local TABLES = {
             `perk_id` VARCHAR(48) NOT NULL,
             `bought_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (`company_id`, `perk_id`),
-            CONSTRAINT `fk_company_perks_company` FOREIGN KEY (`company_id`)
+            FOREIGN KEY (`company_id`)
                 REFERENCES `xs_trucking_companies` (`id`) ON DELETE CASCADE
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     ]],
@@ -174,7 +174,7 @@ local TABLES = {
             `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (`id`),
             KEY `idx_company` (`company_id`),
-            CONSTRAINT `fk_company_ledger_company` FOREIGN KEY (`company_id`)
+            FOREIGN KEY (`company_id`)
                 REFERENCES `xs_trucking_companies` (`id`) ON DELETE CASCADE
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     ]],
@@ -298,6 +298,54 @@ local function migrateTrailers()
     return #rows
 end
 
+local CIPHER_TABLES = { 'companies', 'stats', 'owned', 'deliveries', 'company_ranks', 'company_members', 'company_perks', 'company_ledger' }
+
+local function tableExists(name)
+    local ok, rows = pcall(MySQL.query.await, 'SHOW TABLES LIKE ?', { name })
+    return ok and type(rows) == 'table' and #rows > 0
+end
+
+local function columnsOf(name)
+    local ok, rows = pcall(MySQL.query.await, ('SHOW COLUMNS FROM `%s`'):format(name))
+    if not ok or type(rows) ~= 'table' then return nil end
+    local out = {}
+    for _, row in ipairs(rows) do out[row.Field] = true end
+    return out
+end
+
+local function isEmpty(name)
+    local ok, count = pcall(MySQL.scalar.await, ('SELECT COUNT(*) FROM `%s`'):format(name))
+    return ok and tonumber(count) == 0
+end
+
+local function importCipher()
+    if not tableExists('cipher_trucking_stats') then return end
+    if not (isEmpty('xs_trucking_stats') and isEmpty('xs_trucking_companies') and isEmpty('xs_trucking_owned')) then return end
+
+    local moved = {}
+    for _, suffix in ipairs(CIPHER_TABLES) do
+        local from, to = 'cipher_trucking_' .. suffix, 'xs_trucking_' .. suffix
+        local source = tableExists(from) and columnsOf(from)
+        local target = source and columnsOf(to)
+        local shared = {}
+        for column in pairs(target and source or {}) do
+            if target[column] then shared[#shared + 1] = ('`%s`'):format(column) end
+        end
+        if #shared > 0 then
+            local list = table.concat(shared, ', ')
+            local ok, count = pcall(MySQL.update.await, ('INSERT IGNORE INTO `%s` (%s) SELECT %s FROM `%s`'):format(to, list, list, from))
+            if ok then
+                moved[suffix] = tonumber(count) or 0
+            else
+                print(('^3[XS-Trucking]^0 could not bring over %s: %s'):format(from, tostring(count)))
+            end
+        end
+    end
+
+    print(('^2[XS-Trucking]^0 brought over Cipher-Trucking progress: %d drivers, %d trucks and trailers, %d businesses. The old cipher_trucking tables were left as they are.')
+        :format(moved.stats or 0, moved.owned or 0, moved.companies or 0))
+end
+
 function DB.Install()
     local waited = 0
     while GetResourceState('oxmysql') ~= 'started' do
@@ -340,6 +388,9 @@ function DB.Install()
             print(('^1[XS-Trucking]^0 could not inspect %s.%s, skipped it.'):format(entry[1], entry[2]))
         end
     end
+
+    local imported, err = pcall(importCipher)
+    if not imported then print(('^3[XS-Trucking]^0 could not bring over Cipher-Trucking progress: %s'):format(tostring(err))) end
 
     pcall(migrateTrailers)
     return true
