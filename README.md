@@ -1,6 +1,6 @@
 <h1 align="center">XS-Trucking</h1>
 
-<p align="center">A civilian trucking job for <strong>QBox</strong> and <strong>QBCore</strong> — live route map, truck ownership, fuel and maintenance, and companies.</p>
+<p align="center">A trucking job you build in game, for <strong>QBox</strong> and <strong>QBCore</strong>. Spots, routes, skills, businesses, co-op and illegal loads.</p>
 
 <p align="center">
   <a href="https://github.com/XyraL/XS-Trucking/releases"><img src="https://img.shields.io/github/v/release/XyraL/XS-Trucking?style=flat-square&color=f5bb55&label=release" alt="Latest release"></a>
@@ -17,318 +17,129 @@
   <a href="https://discord.gg/XRURAw4TM2">Discord</a>
 </p>
 
-<!-- SCREENSHOTS: drop 2-3 in-game shots here once captured -->
-
 ---
+
+It comes with one trucking spot at the Port of Los Santos and a handful of
+routes to start with. Everything else is built in game with
+`/truckingbuilder`.
+
+## What it is
+
+**Trucking spots.** Place a laptop, truck bays, trailer bays and return bays
+anywhere on the map. Every spot gets the same laptop and the same job.
+
+**Routes.** Pickups, drop points, pay, XP, the level and certificate needed, a
+timer, fragile cargo, convoys, escorts and illegal loads. The quick route
+builder asks for a name, you place the drop, and it suggests the pay from the
+distance.
+
+**The laptop.** Loads are pins on a 3D map. Click one to see the load, take it,
+or start a crew for it. Your run, your truck, skills, certificates, your
+business and the leaderboards are all on the laptop too.
+
+**Your truck.** Buy trucks and trailers, or use the free depot truck. Parts wear
+as you drive: engine, tyres, brakes, oil and body. Repair and service them,
+refuel, and fit engine, brake, gearbox, suspension and turbo upgrades, paint,
+lights, tint and horns. The load always comes on its own trailer; owning one
+just pays a bonus.
+
+**Levels, skills and certificates.** 50 levels and a skill tree with five paths:
+long haul, precision, heavy haul, business and smuggling. Certificates at set
+levels open better loads: reefer, flatbed, car hauler, hazmat and oversize.
+
+**Businesses.** Start one and invite drivers. Ranks with their own pay cut and
+permissions, a logo from Imgur or Fivemanage, a bank, perks, business trucks
+and fleet runs. Businesses level up from reputation earned on every load.
+
+**Co-op.** Crews form at the laptop.
+
+- **Convoys** — several trucks on one route, with a bonus for every truck that
+  delivers close together.
+- **Escorts** — a pilot car, paid for staying close to the trucks.
+- **Co-drivers** — ride in the cab for a cut of the load.
+
+**Illegal loads.** Someone might call it in, and heat builds with every run.
+
+**Armed guards.** Set on an illegal route in the builder: how many guards,
+their weapons, armour and aim. They show up around the trailer when someone
+gets close and shoot anyone who comes near. Hit it solo or bring gunners.
+Shots bring the police.
+
+**The admin panel.** `/truckingadmin` shows every run live on a map, every
+player's level, XP, certificates and heat, every business and its logo, the
+fleet, live settings and the logs.
 
 ## Requirements
+
+- `qbx_core` or `qb-core`
 - `ox_lib`
-- `ox_target` (hard dependency in this version — no fallback)
 - `oxmysql`
-- Either `qbx_core` **or** `qb-core` — the bridge auto-detects which.
-- A vehicle-keys resource if your server runs one (most do) — see
-  `Config.Trucking.KeysResource` below. Without this, the spawned truck's
-  engine won't start even though the vehicle itself isn't locked.
+- `ox_target` or `qb-target`
 
-## Install
-1. Drop the `XS-Trucking` folder into your `resources`.
-2. **No SQL import needed.** Every table creates and migrates itself on first
-   start (`server/db.lua`). Upgrading from an earlier version is the same
-   process — drop the folder in and restart; any missing columns are added
-   automatically. Watch the console for
-   `[XS-Trucking] database ready — N tables verified`.
-3. Add `ensure XS-Trucking` to your `server.cfg` (after ox_lib, ox_target,
-   oxmysql, your framework, and your keys resource if you run one).
-4. Set `Config.Trucking.KeysResource` to match your server's keys system
-   (defaults to `'qbx'` for the standard QBox recipe's `qbx_vehiclekeys`).
-5. Grant the admin ACE for the oversight panel (see Admin panel below), e.g.:
-   ```
-   add_ace group.admin xs-trucking.admin allow
-   add_principal identifier.fivem:1234 group.admin
-   ```
-6. Tune the rest of `config.lua` — see the callout below before you go live.
+Everything else is found on its own:
 
-> **Updating an existing install:** always re-upload the **whole** folder, not
-> just the files you think changed. A partial upload is the single most
-> confusing failure mode there is — it surfaces as unrelated-looking errors
-> elsewhere. The resource runs a self-check 2 seconds after boot and will
-> name any server file that failed to load.
+| What | Works with |
+| ---- | ---------- |
+| Vehicle keys | qbx_vehiclekeys, qb-vehiclekeys, qs-vehiclekeys, wasabi_carlock, Renewed-Vehiclekeys, mk_vehiclekeys, cd_garage, okokGarage, t1ger_keys, vehicles_keys, or your own event |
+| Fuel | ox_fuel, LegacyFuel, cdn-fuel, ps-fuel, lj-fuel |
+| Police alerts | XS-Dispatch, ps-dispatch, qs-dispatch, cd_dispatch, core_dispatch, rcore_dispatch, linden_outlawalert — or a blip for police |
+| Paying illegal loads as an item | ox_inventory, qb-inventory, qs-inventory, ps-inventory |
 
-## ⚠️ Before going live
-- **Shop vehicle models.** `packer` and `phantom` are base-game tractors and
-  need no checking. `phantom3` is DLC, and both trailer models are worth
-  confirming against your own build. Every shop truck must be a **tractor unit
-  with a fifth wheel** — box trucks like `mule3` look right but have no hitch
-  and can never pull a trailer.
-- **Refuel station coordinates** ship as defaults and were picked from
-  coordinates rather than by standing on them — worth a look if you use the
-  maintenance system.
-- The depot computer, truck spawn/return spots, trailer spawn spots, and all
-  starter contract destinations (Docks / Airport / Movie Set / Vinewood) are
-  confirmed ground-level and safe to use as-is. Add, remove, or edit entries
-  in `Config.Trucking.Contracts` and `Config.Trucking.HotContracts.pool`
-  freely — they're just a starting set.
+## Setup
 
-## What's wired
+### 1. Install it
 
-### Dashboard (NUI)
-`ox_target` on the depot computer opens a full custom dashboard, styled to
-match the rest of the lineup:
-- **Contracts** — every contract is shown, including ones you can't take yet
-  (grayed out with the reason — rank or a missing specialized trailer)
-  rather than hidden. Rotating **hot contracts** (bonus payout, see below)
-  show with a red badge and a live countdown; multi-stop contracts show a
-  stop-count chip. A cargo-type filter and payout/XP/rank sort sit above the
-  board — both are pure client-side, no extra server round-trip when you
-  change them.
-- **Career** — rank/title, XP progress bar to the next rank, total
-  deliveries, total cash earned, driver rating (see below), and an
-  achievement badge grid (`Config.TruckingAchievements`) computed live from
-  your stats.
-- **Route Map** — a hand-drawn vector map of Los Santos (no image assets, so
-  it scales cleanly and follows the theme). Contract pins with hover
-  tooltips, a dashed route line from the depot with distance and ETA,
-  scroll-zoom and drag-pan, and a live "you are here" marker. During a run it
-  switches to tracking that job: solid route, delivered legs dimmed, next
-  stop pulsing.
-- **Active Delivery** — read-only status of your current contract (stage,
-  stop progress on multi-stop routes, payout preview). Status mirror only —
-  it doesn't drive the physical steps below.
-- **Analytics** — earnings over the last `Config.Trucking.analyticsDays`
-  days, a driver-rating trend line, distance and time driven, and your most
-  profitable contracts. Charts are hand-built SVG; no charting library, so
-  the resource keeps zero external dependencies.
-- **Receipts** — a per-delivery history itemising exactly how each payout was
-  reached: base, truck bonus, hot bonus, multi-stop bonus, rating modifier,
-  spoilage, and the company split if one applied.
-- **Leaderboard** — a Drivers/Companies toggle: top
-  `Config.Trucking.leaderboardLimit` players by deliveries completed, or top
-  `Config.Trucking.Company.leaderboardLimit` companies by reputation.
-- **Garage** — buy/select/repair your own trucks *and* trailers, buy
-  performance upgrades and cosmetic paint per truck, service worn components,
-  and passively dispatch an idle truck to run a contract on its own.
-- **Company** — found a company (or get invited into one) and manage ranks,
-  treasury, roster, a company-owned fleet, and the perk tree.
-- **Settings** — per-player display preferences stored locally: sound
-  effects, boot animation, interface animations, metric/imperial units and
-  which tab the terminal opens on.
+Put `XS-Trucking` in your resources and add it to your server.cfg after its
+requirements:
 
-### Fuel & maintenance
-Optional (`Config.Trucking.Maintenance.enabled`), and expressed as 0-100
-percentages so every gauge shares the scale of the existing condition bar.
+```
+ensure ox_lib
+ensure oxmysql
+ensure XS-Trucking
+```
 
-- **Fuel** applies to every truck including the free depot one, which always
-  starts full — a fuel gauge that only appears once you've bought something
-  teaches the mechanic at the worst possible moment. Owned trucks keep
-  whatever is left in the tank and refuel at the stations shown on the map.
-  Burn scales with distance, rises while hauling a trailer, and idling costs
-  something too.
-- **Wear** (tyres, brakes, oil) applies to owned trucks only, following the
-  same rule the existing condition system already used — the free truck is
-  the safety net that always works. Worn tyres cut grip, worn brakes make
-  collisions cost more condition, low oil slowly drains engine health.
-  Service costs scale with how worn a part actually is.
+The database sets itself up the first time it starts, along with the Port of
+Los Santos spot and its routes.
 
-### Admin ops console
-`/truckingadmin` (ACE-gated) opens a six-tab staff panel: server overview and
-top earners, player management (set level, grant XP, reset rating, give cash,
-clear a stuck job), fleet administration, company oversight, a **Control** tab
-exposing ~20 economy knobs that persist to the database and take effect
-immediately — no config edit, no restart — and a recent-deliveries log.
+### 2. Give yourself admin
 
-Settings are an override layer: a value only exists in the database once an
-admin changes it, so anything untouched keeps tracking `config.lua`, and
-"Reset" genuinely hands control back to the file.
+Any one of these works:
 
-### Delivery loop, fully server-authoritative
-1. **Hookup** — truck and trailer spawn at a least-recently-used slot from
-   their 4-point pools (your selected truck/trailer models if you have them
-   active, otherwise the free depot pair). Back the truck up to the trailer
-   — compatible pairs (like `hauler` + `trailers2`) auto-hitch via the
-   game's own physics, no interaction needed. The client just watches for
-   that to happen and reports it; the server independently confirms the
-   hitch actually took before letting you proceed.
-2. **Enroute** — drive the rig to the contract's destination. Multi-stop
-   contracts (`stops` array instead of a single `destination`) keep the
-   trailer hitched and just move the target to the next stop after each
-   delivery — it only despawns once every stop is done.
-3. **Deliver** — a `[E] Deliver Cargo` prompt shows once you're at the
-   destination *with the trailer actually in the zone* (not just the
-   truck). The server independently re-checks both vehicles' real
-   positions before accepting it. On the final stop, the trailer is
-   deleted — cargo delivered, its job is done.
-4. **Return** — only the truck drives back to any depot spot now (the
-   trailer's already gone). A `[E] Return Truck` prompt shows once you're
-   there; the server confirms the truck's real position, pays out, and
-   despawns it.
+```
+add_ace group.admin xs.trucking allow
+```
 
-Hookup uses the game's own auto-hitch detection; deliver/return use a
-walk-up `[E]` prompt (`lib.showTextUI`) with a ground marker, not an
-`ox_target` menu — the dashboard is the depot terminal, not a replacement
-for actually driving.
+or a framework group listed in `Config.Admin.groups` (`god` and `admin` by
+default), or your license in `Config.Admin.licenses`.
 
-### Driving HUD
-A small corner widget (current stage, live distance to the next waypoint,
-stop progress on multi-stop routes) visible while actually driving, whether
-or not the full dashboard is open — it's a separate always-mounted overlay
-that never captures mouse/keyboard focus (`pointer-events: none`), computed
-entirely client-side from the same state already driving the map blip, no
-extra server calls.
+### 3. Build
 
-### Hot contracts
-`Config.Trucking.HotContracts` rotates `activeCount` bonus-payout contracts
-in from `pool` every `rotateMinutes`, computed lazily (checked whenever the
-board is opened, not on a server timer) so the schedule survives restarts.
-`payoutBonusPct` stacks with a truck's own bonus and the multi-stop bonus.
+Run `/truckingbuilder` in game to move the default spot, add new ones and
+make routes.
 
-### Trailer variety
-Trailers are functional, not cosmetic. The free depot trailer only covers
-`cargoType = 'general'` contracts; refrigerated/construction contracts need
-a matching owned+selected trailer from `Config.Trucking.Shop`, or they show
-locked on the board even at the right rank. Refrigerated cargo also has a
-`spoilTimeSeconds` soft time limit — deliver late and the payout is halved
-rather than the contract failing outright.
+## Commands
 
-### Truck & trailer ownership
-- The free depot pair always works for general-cargo contracts — owning
-  upgrades from the Garage is optional, never required.
-- Each shop truck adds `payoutBonusPct` on top of a contract's base payout
-  when it's your active selection.
-- Owned vehicles take real damage: collisions during a delivery lower
-  condition (`Config.Trucking.conditionLossRate`), tracked from actual
-  in-game vehicle health, not a fake timer. A vehicle at 0% condition can't
-  be selected/dispatched until repaired (`Config.Trucking.repairCostPerPoint`).
-- Owned trucks/trailers are stored by this script alone
-  (`xs_trucking_owned`) — no dependency on qb-garage, ox-garage, or any
-  other garage resource.
+| Command | Who | What |
+| ------- | --- | ---- |
+| `/truckingbuilder` | Admins | Opens the builder for spots and routes |
+| `/truckingadmin` | Admins | Opens the admin panel |
 
-### Driver rating
-A running average (0-100), separate from XP/level, tracking how clean your
-driving is — tracked on **every** delivery regardless of which truck you're
-using (unlike condition loss above, which is owned-truck only). Damage taken
-on a trip costs rating points (`Config.Trucking.ratingDamageDivisor`); your
-average going *into* a delivery (not that delivery's own result) grants a
-small payout bonus at `ratingBonusThreshold` or a penalty at
-`ratingPenaltyThreshold`.
+## Updating from 2.x
 
-### Performance upgrades
-Bought per-truck from the Garage/Fleet card (not a separate shop catalog
-entry) — engine, brakes, transmission, and suspension, each with several
-levels (`Config.Trucking.PerformanceUpgrades`), cost scaling with the level
-being bought. Applied via `SetVehicleMod` whenever that truck spawns.
-Trailers never get these.
+Replace the whole folder, including `config.lua` — it is new. Levels, trucks,
+trailers and companies carry over. Old Cipher-Trucking progress is brought over
+too, the first time it starts.
 
-### Truck liveries
-Cosmetic only, no gameplay effect. A curated paint palette
-(`Config.Trucking.PaintColors`) applied via `SetVehicleColours` whenever
-that truck spawns, bought per-truck from the same Garage/Fleet card as
-performance upgrades for a flat `Config.Trucking.paintCost`. Trucks only.
+## Your own keys resource
 
-### Passive / idle dispatch
-An owned truck that isn't currently selected or in use can be **dispatched**
-from the Garage (personal trucks) or Company Fleet tab (company trucks) to
-autonomously run a contract for `Config.Trucking.Company.passiveDispatchMinutes`
-of real time, paying `passiveDispatchPayoutPct` of the normal payout once
-**collected** — less than driving it yourself, since nobody's actually doing
-the work. Computed lazily from a stored ready-at timestamp, so it survives
-restarts without a server timer. Capped at
-`Config.Trucking.Company.maxConcurrentDispatches` per owner.
-
-### Companies
-Player-founded (pay `Config.Trucking.Company.foundingCost` at the depot to
-become Owner) — unlike this codebase's gang system, which is admin-seeded,
-a trucking company is meant to be started by players. Ranks/permissions,
-a treasury with a transaction ledger, invite/kick/promote membership, and
-tiered reputation all follow the same server-authoritative patterns as
-everywhere else in this resource:
-- Invite people by targeting them in-world (`ox_target`, "Invite to
-  Company") — needs the `invite` permission, gated server-side.
-- Any member can **drive** a company truck; buying, repairing, or
-  dispatching one needs the `manage_vehicles` permission.
-- Delivering with a company truck splits the payout between the driver and
-  the company treasury (`Config.Trucking.Company.driverCutPct`, default
-  30% driver / 70% company). Passive-dispatch payouts with no driver
-  involved go 100% to whoever owns the truck.
-- Company reputation (`Config.Trucking.Company.Levels`) grows from
-  company-truck deliveries and collected dispatches, awarding `perkPoints`
-  on every level threshold crossed.
-- **Perk tree** (`Config.Trucking.Company.PerkTree`) — three branches
-  (Fleet, Logistics, Treasury), each a chain of tiers where tier N requires
-  tier N-1 in that same branch already owned (structurally identical to
-  `XS-CriminalTablet`'s gang perk tree). Spent from perk points, gated by the
-  `manage_perks` permission. Fleet raises max concurrent dispatch slots;
-  Logistics reduces dispatch time and boosts the driver cut on
-  company-truck deliveries; Treasury adds a bonus on every deposit.
-- **Achievements** (`Config.Trucking.Company.Achievements`) — computed live
-  from the company's own stats (deliveries, reputation, treasury), same
-  pattern as the personal achievement grid.
-- **Disbanding** — the Owner can disband their own company from the
-  Overview tab (two-step confirm, no modal). Company-owned trucks/trailers
-  are returned to whoever originally bought them, not deleted; the
-  founding cost and any treasury balance are **not** refunded — it's a
-  genuine sink, not an escrow.
-
-### Admin panel
-A separate, red-accented overlay for staff oversight — lists every company
-(owner, treasury, reputation, member count) with a "Force Disband" button,
-for cases where an Owner is gone or abusive and the normal Owner-only
-disband isn't available. Gated by `Config.Trucking.AdminAce`
-(`xs-trucking.admin` by default) checked server-side on every action —
-opened with `/`+`Config.Trucking.AdminCommand` (`truckingadmin` by default).
-Modeled directly on `XS-CriminalTablet`'s own admin tablet (`isAdmin`/`guarded`
-pattern), minus Discord logging — this resource has no Discord integration.
-
-### Progression & payout
-- Payout is **cash** (`Config.Trucking.payoutAccount`) plus personal XP
-  toward `Config.TruckingLevels` (Rookie Hauler → Master Trucker), which
-  gates which contracts you can accept.
-- One active delivery per player at a time (in-memory, no cooldown table —
-  queue the next contract immediately after finishing one).
-- Truck/trailer are always deleted on job completion, cancellation, or
-  disconnect — nothing clutters the depot over time.
-
-## Deferred to future updates
-- Fuel realism (damage/condition tracking exists; fuel does not)
-- Hijacking/ambush risk en route
-- Convoy/co-op contracts (multiple *players* driving one job together —
-  different from the company system's multiple *owned trucks*)
-
-## Architecture note
-The client only spawns visuals and reports interaction attempts; the server
-owns all job/company state and re-validates positions, ownership, and
-permissions (resolved server-side, never trusting client-claimed state)
-before advancing any stage, paying out, or touching a treasury. The NUI
-dashboard is a thin client-side layer on top of the same server callbacks —
-nothing NUI-specific lives server-side. The company system
-(`server/company.lua`) is a direct structural port of this codebase's `XS-CriminalTablet`
-gang system (ranks/permissions/treasury/reputation), renamed to fit trucking.
-
----
-
-## Documentation
-
-Full setup guide, requirements and troubleshooting:
-**[xyralscripts.dev/docs-xs-trucking](https://xyralscripts.dev/docs-xs-trucking)**
+Set `Config.Bridges.keys = 'custom'` and `Config.CustomKeysEvent` to a server
+event of yours. It gets `source, plate, netId` for every truck handed over.
 
 ## Support
 
 - **Found a bug?** [Open an issue](https://github.com/XyraL/XS-Trucking/issues)
-- **Need setup help?** [Join the Discord](https://discord.gg/XRURAw4TM2) — check the setup guide first, it usually has the answer
-
-## My other scripts
-
-All free, all source-available.
-
-| Script | What it is |
-|---|---|
-| **[XS-CriminalTablet](https://github.com/XyraL/XS-CriminalTablet)** | modular criminal device for QBox and QBCore — gang ops, blackmarket and boosting in one encrypted tablet. |
-| **[XS-MDT](https://github.com/XyraL/XS-MDT)** | multi-department MDT for QBox — police, EMS and fire with live CAD, records, patient care and a live unit map. |
-| **[XS-AdminMenu](https://github.com/XyraL/XS-AdminMenu)** | advanced admin suite for QBox and QBCore — player management, bans, reports, inventory tools and entity inspection. |
-| **[XS-Drone](https://github.com/XyraL/XS-Drone)** | deployable police drone for QBox and QBCore — smooth flight, thermal, spotlight, tracker darts and real counterplay. |
-| **[XS-MultiCharacter](https://github.com/XyraL/XS-MultiCharacter)** | cinematic character selection for QBox and QBCore — identity dossiers, saved appearances, spawn cameras and configurable slots. |
-| **[XS-Dispatch](https://github.com/XyraL/XS-Dispatch)** | multi-department live dispatch for QBox and QBCore — responder tracking, priority calls, TAC radio and provider integrations. |
+- **Need setup help?** [Join the Discord](https://discord.gg/XRURAw4TM2)
 
 ## License
 
-Free to use on any server you own or operate, including commercial ones.
-**Do not redistribute or resell** — see [LICENSE](LICENSE) for the full terms.
+Free to use on your own servers. No redistribution or resale. See `LICENSE`.

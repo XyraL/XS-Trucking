@@ -2,6 +2,30 @@
 
 All notable changes to **XS-Trucking**.
 
+## [3.0.0] — 2026-09-30
+
+A full rebuild with a new look. The job is now built in game.
+
+- New laptop with a 3D map. Loads are pins you click
+- Build trucking spots in game with /truckingbuilder: the laptop, truck bays, trailer bays and return bays
+- Build routes in game: pickups, drops, pay, XP, level, certificate, timer and fragile cargo
+- Quick route: place the drop and it suggests the pay
+- The load comes on its own trailer. Owning a trailer pays a bonus
+- 50 levels and a skill tree with five paths
+- Certificates open better loads: reefer, flatbed, car hauler, hazmat and oversize
+- Truck panel: parts that wear, repairs, servicing, fuel, upgrades, paint, lights, tint and horns
+- Businesses: invite drivers, ranks and pay cuts, a logo, a bank, perks, business trucks and fleet runs
+- Leaderboards for drivers and businesses
+- Co-op: convoys, escorts and co-drivers. Crews form at the laptop
+- Illegal loads with tip-offs and heat
+- Armed guards on illegal routes. Set how many, their weapons, armour and aim in the builder
+- Admin panel with /truckingadmin: live runs, players, businesses, logos, fleet, settings and logs
+- Uses your server's fuel, keys and dispatch scripts
+- Progress from 2.x and Cipher-Trucking carries over
+
+## Updating
+Replace the whole folder, including config.lua. It is new. No SQL to run.
+
 ## [2.1.1] — 2026-07-31
 
 ### Removed

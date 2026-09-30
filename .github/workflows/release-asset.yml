@@ -41,6 +41,7 @@ jobs:
             --exclude '.gitignore' \
             --exclude '.gitattributes' \
             --exclude '*.zip' \
+            --exclude 'tools' \
             --exclude 'html/preview.html'
 
           cd staging
