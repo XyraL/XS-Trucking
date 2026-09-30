@@ -1,7 +1,8 @@
-Run = { state = nil, truck = 0, trailer = 0, parts = nil }
+Run = { state = nil, truck = 0, trailer = 0, parts = nil, lead = 0 }
 
 local blip, busy, prompt = nil, false, nil
 local returnBlips = {}
+local shownKey, watching = nil, nil
 
 local function entityFromNet(netId, timeout)
     if not netId then return 0 end
@@ -14,6 +15,13 @@ local function entityFromNet(netId, timeout)
         Wait(50)
         waited = waited + 50
     end
+    return 0
+end
+
+local function localEntity(netId)
+    if not netId or not NetworkDoesNetworkIdExist(netId) then return 0 end
+    local entity = NetworkGetEntityFromNetworkId(netId)
+    if entity ~= 0 and DoesEntityExist(entity) then return entity end
     return 0
 end
 
@@ -68,30 +76,61 @@ local function warpInto(vehicle)
     return GetVehiclePedIsIn(ped, false) == vehicle
 end
 
+local function climbIn(vehicle)
+    if vehicle == 0 or GetVehiclePedIsIn(cache.ped, false) == vehicle then return end
+    for seat = 0, GetVehicleMaxNumberOfPassengers(vehicle) - 1 do
+        if IsVehicleSeatFree(vehicle, seat) then
+            TaskEnterVehicle(cache.ped, vehicle, 8000, seat, 1.0, 1, 0)
+            return
+        end
+    end
+end
+
 local function clearBlips()
     if blip and DoesBlipExist(blip) then RemoveBlip(blip) end
     blip = nil
+    Run.lead = 0
     for _, b in ipairs(returnBlips) do
         if DoesBlipExist(b) then RemoveBlip(b) end
     end
     returnBlips = {}
 end
 
+local function nameBlip(handle, label, colour)
+    SetBlipSprite(handle, 477)
+    SetBlipColour(handle, colour or 5)
+    SetBlipScale(handle, 0.9)
+    SetBlipRoute(handle, true)
+    SetBlipRouteColour(handle, colour or 5)
+    BeginTextCommandSetBlipName('STRING')
+    AddTextComponentSubstringPlayerName(label)
+    EndTextCommandSetBlipName(handle)
+end
+
 local function routeBlip(point, label, colour)
     clearBlips()
     if not point then return end
     blip = AddBlipForCoord(point.x, point.y, point.z)
-    SetBlipSprite(blip, 477)
-    SetBlipColour(blip, colour or 5)
-    SetBlipScale(blip, 0.9)
-    SetBlipRoute(blip, true)
-    SetBlipRouteColour(blip, colour or 5)
-    BeginTextCommandSetBlipName('STRING')
-    AddTextComponentSubstringPlayerName(label)
-    EndTextCommandSetBlipName(blip)
+    nameBlip(blip, label, colour)
 end
 
-local function returnMarkers(points)
+local function leadBlip(state)
+    local entity = localEntity(state.leadNet)
+    if entity ~= 0 and entity == Run.lead and blip and DoesBlipExist(blip) then return end
+    clearBlips()
+    local label = ('Convoy: %s'):format(state.leadName or 'lead truck')
+    if entity ~= 0 then
+        blip = AddBlipForEntity(entity)
+        Run.lead = entity
+    elseif state.leadAt then
+        blip = AddBlipForCoord(state.leadAt.x, state.leadAt.y, state.leadAt.z)
+    else
+        return
+    end
+    nameBlip(blip, label, 3)
+end
+
+local function returnMarkers(points, label)
     clearBlips()
     local nearest, best = nil, math.huge
     local here = GetEntityCoords(cache.ped)
@@ -99,11 +138,21 @@ local function returnMarkers(points)
         local d = #(here - vector3(point.x, point.y, point.z))
         if d < best then nearest, best = point, d end
     end
-    if nearest then routeBlip(nearest, 'Bring the truck back', 2) end
+    if nearest then routeBlip(nearest, label or 'Bring the truck back', 2) end
 end
 
 local function objective(state)
     if not state then return nil end
+    if state.role == 'codriver' then
+        local driver = state.driverName or 'the driver'
+        if state.stage == 'hookup' then return ('Riding with %s. They are hitching up'):format(driver) end
+        if state.stage == 'enroute' then return ('Riding with %s. Stay in the cab for the drop'):format(driver) end
+        return ('Riding back with %s'):format(driver)
+    end
+    if state.role == 'escort' then
+        if state.stage == 'return' then return 'Take the pilot car back to a trucking spot' end
+        return 'Stay close to the convoy until it delivers'
+    end
     if state.stage == 'hookup' then return 'Back the truck up to the trailer and hitch it' end
     if state.stage == 'enroute' then
         if #state.stops > 1 then return ('Deliver to drop %d of %d'):format(state.stop, #state.stops) end
@@ -115,7 +164,27 @@ end
 local function applyStage(state)
     Run.state = state
     if not state then
+        shownKey = nil
         clearBlips()
+        return
+    end
+
+    if state.role == 'escort' and state.stage == 'escort' then
+        shownKey = 'escort'
+        leadBlip(state)
+        return
+    end
+
+    local key = ('%s:%s:%s:%s'):format(state.id, state.role or 'driver', state.stage, state.stop)
+    if key == shownKey then return end
+    shownKey = key
+
+    if state.role == 'codriver' then
+        if state.stage == 'enroute' then
+            routeBlip(state.target, #state.stops > 1 and ('Drop %d of %d'):format(state.stop, #state.stops) or 'Drop point', state.illegal and 1 or 5)
+        else
+            clearBlips()
+        end
         return
     end
 
@@ -125,7 +194,7 @@ local function applyStage(state)
         routeBlip(state.target, #state.stops > 1 and ('Drop %d of %d'):format(state.stop, #state.stops) or 'Drop point', state.illegal and 1 or 5)
     elseif state.stage == 'return' then
         Run.trailer = 0
-        returnMarkers(state.returns)
+        returnMarkers(state.returns, state.role == 'escort' and 'Bring the pilot car back' or nil)
     end
 end
 
@@ -135,20 +204,23 @@ local function attached(truck)
 end
 
 local function hitchWatch(runId)
+    if watching == runId then return end
+    watching = runId
     CreateThread(function()
         local nextTry = 0
-        while Run.state and Run.state.id == runId and Run.state.stage == 'hookup' do
+        while Run.state and Run.state.id == runId and Run.state.stage == 'hookup' and watching == runId do
             Wait(500)
             if attached(Run.truck) and GetGameTimer() >= nextTry then
                 nextTry = GetGameTimer() + 4000
                 local ok, err = lib.callback.await('XS-Trucking:server:hooked', false)
                 if ok then
                     Framework.Notify('Trailer hitched. Head for the drop point.', 'success')
-                elseif err then
+                elseif err and Run.state and Run.state.stage == 'hookup' then
                     Framework.Notify(err, 'error')
                 end
             end
         end
+        if watching == runId then watching = nil end
     end)
 end
 
@@ -197,7 +269,7 @@ end
 CreateThread(function()
     while true do
         local state = Run.state
-        if not state then
+        if not state or state.role == 'codriver' or state.stage == 'escort' then
             setPrompt(nil)
             Wait(750)
         else
@@ -229,7 +301,7 @@ CreateThread(function()
                     end
                 end
                 if near then
-                    setPrompt('[E] Hand the truck back')
+                    setPrompt(state.role == 'escort' and '[E] Hand the pilot car back' or '[E] Hand the truck back')
                     if IsControlJustReleased(0, 38) then park() end
                 else
                     setPrompt(nil)
@@ -259,6 +331,29 @@ local function penalties()
 
 end
 
+local function crewSummary(state)
+    local crew = state.crew
+    if not crew or #crew == 0 then return nil end
+    local trucks, delivered, escorts, presence = 0, 0, 0, nil
+    for _, member in ipairs(crew) do
+        if member.role == 'driver' then
+            trucks = trucks + 1
+            if member.delivered then delivered = delivered + 1 end
+        else
+            escorts = escorts + 1
+            if member.me then presence = member.presence end
+        end
+    end
+    return { trucks = trucks, delivered = delivered, escorts = escorts, presence = presence }
+end
+
+local function leadPosition(state)
+    local entity = Run.lead ~= 0 and DoesEntityExist(Run.lead) and Run.lead or localEntity(state.leadNet)
+    if entity ~= 0 then return GetEntityCoords(entity) end
+    if state.leadAt then return vector3(state.leadAt.x, state.leadAt.y, state.leadAt.z) end
+    return nil
+end
+
 CreateThread(function()
     local shown = false
     while true do
@@ -266,31 +361,49 @@ CreateThread(function()
         local state = Run.state
         if state then
             local here = GetEntityCoords(cache.ped)
-            local target = state.target
+            local target = state.target and vector3(state.target.x, state.target.y, state.target.z) or nil
+            local inRange
+
             if state.stage == 'return' and state.returns then
                 local best
                 for _, point in ipairs(state.returns) do
                     local d = #(here - vector3(point.x, point.y, point.z))
-                    if not best or d < best then best, target = d, point end
+                    if not best or d < best then best, target = d, vector3(point.x, point.y, point.z) end
                 end
+            elseif state.stage == 'escort' then
+                if Run.lead == 0 or not DoesEntityExist(Run.lead) then
+                    if localEntity(state.leadNet) ~= 0 or Run.lead ~= 0 then leadBlip(state) end
+                end
+                target = leadPosition(state)
+                inRange = target ~= nil and #(here - target) <= (state.escortRange or 150.0)
             end
 
-            penalties()
+            if state.role ~= 'codriver' then penalties() end
+
+            local vehicle = Run.truck ~= 0 and DoesEntityExist(Run.truck) and Run.truck or (state.role == 'escort' and cache.vehicle) or 0
+            local crew = crewSummary(state)
 
             UI.Send('hud', {
+                role = state.role or 'driver',
                 stage = state.stage,
                 objective = objective(state),
                 label = state.label,
                 cargo = state.cargo,
-                distance = target and #(here - vector3(target.x, target.y, target.z)) or nil,
+                driverName = state.driverName,
+                leadName = state.leadName,
+                distance = target and #(here - target) or nil,
                 stop = state.stop,
                 stops = #state.stops,
                 deadline = state.deadline and (state.deadline - state.now) - math.floor((GetGameTimer() - (Run.stateAt or GetGameTimer())) / 1000) or nil,
-                fuel = Run.truck ~= 0 and Fuel.Get(Run.truck) or nil,
+                fuel = vehicle ~= 0 and Fuel.Get(vehicle) or nil,
                 illegal = state.illegal,
                 tipped = state.tipped,
                 hitched = state.stage ~= 'hookup' or attached(Run.truck),
-                speed = Run.truck ~= 0 and DoesEntityExist(Run.truck) and GetEntitySpeed(Run.truck) or 0,
+                speed = vehicle ~= 0 and GetEntitySpeed(vehicle) or 0,
+                crew = crew,
+                inRange = inRange,
+                presenceNeed = state.escortPresence,
+                codriver = state.codriver and state.codriver.name or nil,
             })
             shown = true
         elseif shown then
@@ -300,16 +413,26 @@ CreateThread(function()
     end
 end)
 
-RegisterNetEvent('XS-Trucking:client:runStarted', function(state, props)
+local function begin(state, props)
     Run.state = state
     Run.parts = props and props.parts or nil
     Run.stateAt = GetGameTimer()
+    Run.lead = 0
+    shownKey = nil
 
+    local rider = state.role == 'codriver'
     local truck = entityFromNet(state.truckNet)
-    local trailer = entityFromNet(state.trailerNet)
-    Run.truck, Run.trailer = truck, trailer
+    Run.truck = truck
+    Run.trailer = (rider or state.role == 'escort') and 0 or entityFromNet(state.trailerNet)
+    return truck, rider
+end
 
-    if truck ~= 0 then
+RegisterNetEvent('XS-Trucking:client:runStarted', function(state, props)
+    local truck, rider = begin(state, props)
+
+    if rider then
+        climbIn(truck)
+    elseif truck ~= 0 then
         if takeControl(truck) then
             applyProps(truck, props)
             if Run.parts and Config.Parts.enabled and (Run.parts.engine or 100) < Config.Parts.enginePowerBelow then
@@ -325,7 +448,7 @@ RegisterNetEvent('XS-Trucking:client:runStarted', function(state, props)
     end
 
     applyStage(state)
-    hitchWatch(state.id)
+    if state.role == 'driver' and state.stage == 'hookup' then hitchWatch(state.id) end
     Framework.Notify(('%s: %s'):format(state.label, objective(state)), 'inform')
 end)
 
@@ -333,40 +456,88 @@ RegisterNetEvent('XS-Trucking:client:run', function(state)
     if not state then return end
     Run.state = state
     Run.stateAt = GetGameTimer()
-    if state.trailerNet and Run.trailer == 0 then Run.trailer = entityFromNet(state.trailerNet, 2000) end
+    if state.role == 'driver' and state.trailerNet and Run.trailer == 0 then Run.trailer = entityFromNet(state.trailerNet, 2000) end
+    if Run.truck == 0 and state.truckNet then Run.truck = localEntity(state.truckNet) end
     applyStage(state)
-    if state.stage == 'hookup' then hitchWatch(state.id) end
+    if state.role == 'driver' and state.stage == 'hookup' then hitchWatch(state.id) end
 end)
 
 RegisterNetEvent('XS-Trucking:client:runEnded', function(reason, summary)
     Run.state = nil
     Run.truck, Run.trailer, Run.parts = 0, 0, nil
+    shownKey, watching = nil, nil
     clearBlips()
     setPrompt(nil)
     UI.Send('hud', false)
 
     if reason == 'done' then
         UI.Send('receipt', summary)
-    elseif summary and summary.message then
+    elseif summary and summary.message and summary.message ~= '' then
         Framework.Notify(summary.message, reason == 'cancelled' and 'inform' or 'error')
     end
+end)
+
+CreateThread(function()
+    local away = 0
+    while true do
+        Wait(1000)
+        local state = Run.state
+        if state and state.role == 'codriver' and state.stage ~= 'return' then
+            local truck = localEntity(state.truckNet)
+            local far = truck == 0 or #(GetEntityCoords(cache.ped) - GetEntityCoords(truck)) > 150.0
+            away = far and away + 1 or 0
+            if away == 15 then
+                Framework.Notify('Get back to the truck or you leave the ride.', 'error')
+            elseif away >= 30 then
+                away = 0
+                lib.callback.await('XS-Trucking:server:cancel', false)
+            end
+        else
+            away = 0
+        end
+    end
+end)
+
+CreateThread(function()
+    if not Config.Coop.codriver.enabled then return end
+    Target.AddPlayers('xs_trucking_codriver', {
+        {
+            id = 'invite',
+            label = 'Invite as co-driver',
+            icon = 'fas fa-user-plus',
+            distance = 3.0,
+            canInteract = function()
+                local state = Run.state
+                return state ~= nil and state.role == 'driver' and state.canInvite == true
+            end,
+            action = function(data)
+                local entity = type(data) == 'table' and data.entity or data
+                if not entity or entity == 0 then return end
+                local target = GetPlayerServerId(NetworkGetPlayerIndexFromPed(entity))
+                local ok, err = lib.callback.await('XS-Trucking:server:inviteRider', false, target)
+                if ok then
+                    Framework.Notify('Invite sent. They have a minute to get in.', 'success')
+                else
+                    Framework.Notify(err or 'Could not invite them.', 'error')
+                end
+            end,
+        },
+    })
 end)
 
 CreateThread(function()
     while not Framework.GetCitizenId() do Wait(1000) end
     local state = lib.callback.await('XS-Trucking:server:run', false)
     if state then
-        Run.state = state
-        Run.stateAt = GetGameTimer()
-        Run.truck = entityFromNet(state.truckNet, 3000)
-        Run.trailer = entityFromNet(state.trailerNet, 3000)
+        begin(state, nil)
         applyStage(state)
-        if state.stage == 'hookup' then hitchWatch(state.id) end
+        if state.role == 'driver' and state.stage == 'hookup' then hitchWatch(state.id) end
     end
 end)
 
 AddEventHandler('onResourceStop', function(resource)
     if resource ~= GetCurrentResourceName() then return end
     clearBlips()
+    Target.Remove('xs_trucking_codriver')
     if prompt then lib.hideTextUI() end
 end)

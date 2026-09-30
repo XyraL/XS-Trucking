@@ -8,6 +8,7 @@ local PLAYER = {
     businessLeave = true, businessKick = true, businessGrade = true, businessRanks = true, businessProfile = true,
     businessDeposit = true, businessWithdraw = true, businessPerk = true, businessSlots = true, businessTransfer = true,
     businessDisband = true, businessLedger = true, nearbyPlayers = true, leaderboards = true, history = true,
+    crews = true, crewOpen = true, crewJoin = true, crewLeave = true, crewKick = true, crewStart = true, inviteRider = true,
 }
 
 local ADMIN = {
@@ -74,6 +75,7 @@ RegisterNUICallback('rpc', function(data, cb)
 
     local args = type(data.args) == 'table' and data.args or {}
     if name == 'take' then args[3] = GetClockHours() end
+    if name == 'crewStart' then args[1] = GetClockHours() end
 
     local results = { lib.callback.await('XS-Trucking:server:' .. name, false, table.unpack(args, 1, 6)) }
     cb({ ok = results[1] ~= false and results[1] ~= nil, result = results[1], extra = results[2] })
@@ -98,6 +100,28 @@ RegisterNetEvent('XS-Trucking:client:businessInvite', function(data)
 
     local ok, result = lib.callback.await('XS-Trucking:server:businessAccept', false)
     Framework.Notify(ok and ('You joined %s.'):format(result or 'the business') or (result or 'Could not join.'), ok and 'success' or 'error')
+end)
+
+RegisterNetEvent('XS-Trucking:client:crew', function(crew)
+    UI.Send('crew', crew or false)
+end)
+
+RegisterNetEvent('XS-Trucking:client:closeUI', function()
+    UI.Close()
+end)
+
+RegisterNetEvent('XS-Trucking:client:rideInvite', function(data)
+    local answer = lib.alertDialog({
+        header = 'Ride along?',
+        content = ('%s wants you as co-driver on %s. Stay in the cab until the drop to get paid.'):format(data.from or 'A driver', data.load or 'their load'),
+        centered = true,
+        cancel = true,
+        labels = { confirm = 'Get in', cancel = 'No thanks' },
+    })
+    if answer ~= 'confirm' then return end
+
+    local ok, result = lib.callback.await('XS-Trucking:server:acceptRide', false)
+    if not ok then Framework.Notify(result or 'Could not join them.', 'error') end
 end)
 
 AddEventHandler('onResourceStop', function(resource)

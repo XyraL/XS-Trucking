@@ -13,13 +13,13 @@ XS.Admin = (() => {
     ];
 
     function stage(s) {
-        return { hookup: '<span class="chip amber">Hitching</span>', enroute: '<span class="chip cyan">On the road</span>', return: '<span class="chip green">Heading back</span>' }[s] || s;
+        return { hookup: '<span class="chip amber">Hitching</span>', enroute: '<span class="chip cyan">On the road</span>', return: '<span class="chip green">Heading back</span>', escort: '<span class="chip violet">Escorting</span>' }[s] || s;
     }
 
     function runsTable(runs) {
         if (!runs.length) return '<div class="dim">Nobody is on a load right now.</div>';
         return `<table class="grid"><thead><tr><th>Driver</th><th>Load</th><th>Stage</th><th>From</th><th>Plate</th><th class="r">Time</th><th></th></tr></thead><tbody>
-            ${runs.map((r) => `<tr><td>${XS.esc(r.name)}</td><td>${XS.esc(r.route)}${r.illegal ? ' <span class="chip red">Illegal</span>' : ''}${r.tipped ? ' <span class="chip red">Reported</span>' : ''}</td>
+            ${runs.map((r) => `<tr><td>${XS.esc(r.name)}${r.role === 'escort' ? ' <span class="chip violet">Escort</span>' : ''}${r.convoy ? ` <span class="chip cyan">Convoy ${r.convoy}</span>` : ''}${r.codriver ? `<div class="dim" style="font-size:11px">Co-driver: ${XS.esc(r.codriver)}</div>` : ''}</td><td>${XS.esc(r.route)}${r.illegal ? ' <span class="chip red">Illegal</span>' : ''}${r.tipped ? ' <span class="chip red">Reported</span>' : ''}</td>
                 <td>${stage(r.stage)}${r.stage === 'enroute' && r.stops > 1 ? ` <span class="dim">${r.stop}/${r.stops}</span>` : ''}</td><td class="dim">${XS.esc(r.spot)}</td>
                 <td class="mono">${XS.esc(r.plate)}</td><td class="r mono">${XS.clock(Date.now() / 1000 - r.startedAt)}</td>
                 <td class="r"><button class="btn xs" data-clear="${XS.esc(r.citizenid)}">Clear</button></td></tr>`).join('')}</tbody></table>`;

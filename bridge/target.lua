@@ -90,7 +90,9 @@ function Target.AddPlayers(id, options)
         end)() }
     elseif Target.name == 'qb-target' then
         exports['qb-target']:AddGlobalPlayer({ options = qbOptions(options), distance = 3.0 })
-        registered[id] = { players = true }
+        local labels = {}
+        for _, option in ipairs(options) do labels[#labels + 1] = option.label end
+        registered[id] = { players = true, labels = labels }
     end
 end
 
@@ -106,7 +108,8 @@ function Target.Remove(id)
             elseif entry.players then exports.ox_target:removeGlobalPlayer(entry.names) end
         elseif Target.name == 'qb-target' then
             if entry.entity then exports['qb-target']:RemoveTargetEntity(entry.entity)
-            elseif entry.named then exports['qb-target']:RemoveZone(entry.named) end
+            elseif entry.named then exports['qb-target']:RemoveZone(entry.named)
+            elseif entry.players then exports['qb-target']:RemoveGlobalPlayer(entry.labels) end
         end
     end)
 end

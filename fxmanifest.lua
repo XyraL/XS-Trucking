@@ -44,6 +44,7 @@ server_scripts {
     'server/business.lua',
     'server/garage.lua',
     'server/jobs.lua',
+    'server/coop.lua',
     'server/callbacks.lua',
     'server/admin.lua',
     'server/main.lua',

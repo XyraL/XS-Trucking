@@ -383,6 +383,10 @@ Config.Pay = {
 
 -- ── Co-op ──────────────────────────────────────────────────────────────────
 Config.Coop = {
+    -- A crew is put together at the laptop before it rolls out. Crews nobody
+    -- starts within this many minutes are closed.
+    lobbyMinutes = 10,
+
     -- Convoys: several trucks take one route together. Everyone hauls their
     -- own trailer and gets bonusPerTruck percent for every other truck, as
     -- long as they all deliver within windowMinutes of the first.
@@ -397,6 +401,8 @@ Config.Coop = {
         cut = 25,
         range = 150.0,          -- metres from the load
         presence = 70,          -- percent of the trip they have to be in range
+        -- A route that asks for escorts cannot roll out without them.
+        required = true,
     },
 
     -- Co-drivers ride in the cab and are paid cut percent of the load on top.
@@ -553,6 +559,7 @@ Config.DefaultSpot = {
 -- Routes created with the default spot.
 Config.DefaultRoutes = {
     { label = 'General Freight', cargo = 'Consumer goods', type = 'dryvan', weight = 12, pay = 350, xp = 40, level = 1,
+      convoy = { min = 1, max = 4 },
       stops = { { x = -509.84, y = -2852.44, z = 5.24, h = 45.51 } } },
     { label = 'Airport Cargo', cargo = 'Air freight', type = 'dryvan', weight = 10, pay = 400, xp = 45, level = 1,
       stops = { { x = -979.5997, y = -2865.0774, z = 14.1832, h = 59.9426 } } },

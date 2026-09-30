@@ -14,6 +14,15 @@ register('cancel', function(src) return Jobs.Cancel(src) end)
 register('run', function(src) return Jobs.State(src) end)
 register('profile', function(src) return Progress.Profile(src) end)
 
+register('crews', function(src, spotId) return Coop.ForSpot(tonumber(spotId), src) end)
+register('crewOpen', function(src, spotId, routeId) return Coop.Open(src, spotId, routeId) end)
+register('crewJoin', function(src, lobbyId, role) return Coop.Join(src, lobbyId, role) end)
+register('crewLeave', function(src) return Coop.Leave(src) end)
+register('crewKick', function(src, target) return Coop.Kick(src, target) end)
+register('crewStart', function(src, hour) return Coop.Start(src, hour) end)
+register('inviteRider', function(src, target) return Coop.InviteRider(src, target) end)
+register('acceptRide', function(src) return Coop.AcceptRide(src) end)
+
 local function catalog()
     local trucks = {}
     for i, entry in ipairs(Config.Trucks.shop) do trucks[i] = entry end

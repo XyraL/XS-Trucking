@@ -1,4 +1,4 @@
-Jobs = { active = {} }
+Jobs = { active = {}, convoys = {}, riders = {} }
 
 local cooldown = {}
 local bayUse = {}
@@ -110,6 +110,12 @@ local function lockReason(route, profile, cid)
     return nil
 end
 
+Jobs.LockReason = lockReason
+
+local function needsEscort(route)
+    return Config.Coop.escort.enabled and Config.Coop.escort.required and (route.escorts or 0) > 0
+end
+
 local function publicLoad(route, spot, profile, cid)
     local origin = Spots.Origin(spot, route)
     local km = Util.RouteLength(route, origin) / 1000
@@ -137,6 +143,7 @@ local function publicLoad(route, spot, profile, cid)
         timer = route.timer,
         convoy = route.convoy,
         escorts = route.escorts,
+        needsEscort = needsEscort(route),
         illegal = route.illegal,
         fragile = route.fragile,
         hot = hot[route.id] == true,
@@ -177,10 +184,57 @@ function Jobs.Board(src, spotId)
             bonus = (Util.ShopTrailer(trailer.model) or {}).bonus or 0 } or nil,
         run = Jobs.State(src),
         business = Business.Public(Business.ByCitizen(cid)),
+        crews = Coop and Coop.ForSpot(spot.id, src) or {},
+        me = src,
+        coop = {
+            convoyBonus = SGet('coop.convoyBonus', Config.Coop.convoy.bonusPerTruck),
+            maxBonus = Config.Coop.convoy.maxBonus,
+            escortCut = SGet('coop.escortCut', Config.Coop.escort.cut),
+            presence = Config.Coop.escort.presence,
+            codriverCut = SGet('coop.codriverCut', Config.Coop.codriver.cut),
+            codriver = Config.Coop.codriver.enabled,
+            codriverXp = Config.Coop.codriver.xp,
+        },
     }
 end
 
-local function stateFor(job)
+local function crewFor(job)
+    local convoy = job.convoy and Jobs.convoys[job.convoy]
+    if not convoy then return nil end
+    local out = {}
+    for src in pairs(convoy.members) do
+        local other = Jobs.active[src]
+        if other and other.convoy ~= convoy.id then other = nil end
+        local member = convoy.members[src]
+        out[#out + 1] = {
+            source = src, name = member.name, role = member.role, me = src == job.src,
+            stage = other and other.stage or (convoy.delivered[src] and 'done' or 'gone'),
+            stop = other and other.stop or nil,
+            delivered = convoy.delivered[src] ~= nil,
+            presence = member.role == 'escort' and convoy.presence[src]
+                and math.floor(convoy.presence[src].hits / math.max(1, convoy.presence[src].samples) * 100) or nil,
+        }
+    end
+    table.sort(out, function(a, b)
+        if a.role ~= b.role then return a.role == 'driver' end
+        return a.source < b.source
+    end)
+    return out
+end
+
+local function leadTruck(convoy)
+    if not convoy then return nil end
+    local best
+    for src, member in pairs(convoy.members) do
+        local job = Jobs.active[src]
+        if member.role == 'driver' and job and job.convoy == convoy.id and job.stage ~= 'return' and DoesEntityExist(job.truck.entity) then
+            if not best or src == convoy.lead then best = job end
+        end
+    end
+    return best
+end
+
+local function stateFor(job, viewer)
     if not job then return nil end
     local route = job.route
     local stops = {}
@@ -193,8 +247,13 @@ local function stateFor(job)
         target = route.stops[job.stop]
     end
 
+    local convoy = job.convoy and Jobs.convoys[job.convoy]
+    local lead = job.role == 'escort' and leadTruck(convoy) or nil
+
     return {
         id = job.id,
+        role = viewer and 'codriver' or job.role,
+        driverName = viewer and job.name or nil,
         stage = job.stage,
         spot = job.spot,
         spotName = job.spotName,
@@ -218,20 +277,45 @@ local function stateFor(job)
         now = os.time(),
         late = job.late,
         truckNet = job.truck.net,
-        trailerNet = job.trailer and job.trailer.net or nil,
+        trailerNet = job.trailer and not job.trailer.gone and job.trailer.net or nil,
         truckLabel = job.truck.label,
         plate = job.truck.plate,
         tipped = job.tipped == true,
+        convoy = job.convoy,
+        crew = crewFor(job),
+        leadNet = lead and lead.truck.net or nil,
+        leadAt = lead and coords(lead.truck.entity) or nil,
+        leadName = lead and lead.name or nil,
+        escortRange = Config.Coop.escort.range,
+        escortPresence = Config.Coop.escort.presence,
+        codriver = job.codriver and { name = job.codriver.name, source = job.codriver.src } or nil,
+        canInvite = job.role == 'driver' and not job.codriver and Config.Coop.codriver.enabled and job.stage ~= 'return',
     }
 end
 
 function Jobs.State(src)
-    return stateFor(Jobs.active[src])
+    local job = Jobs.active[src]
+    if job then return stateFor(job) end
+    local driver = Jobs.riders[src]
+    local ride = driver and Jobs.active[driver]
+    if ride and ride.codriver and ride.codriver.src == src then return stateFor(ride, src) end
+    return nil
 end
 
 local function push(job)
     TriggerClientEvent('XS-Trucking:client:run', job.src, stateFor(job))
+    if job.codriver then TriggerClientEvent('XS-Trucking:client:run', job.codriver.src, stateFor(job, job.codriver.src)) end
 end
+
+local function pushConvoy(convoy)
+    if not convoy then return end
+    for src in pairs(convoy.members) do
+        local job = Jobs.active[src]
+        if job and job.convoy == convoy.id then push(job) end
+    end
+end
+
+Jobs.Push = push
 
 function Jobs.SpotBusy(spotId)
     for _, job in pairs(Jobs.active) do
@@ -254,14 +338,18 @@ function Jobs.UsingOwned(ownedId)
     return false
 end
 
+function Jobs.Busy(src)
+    return Jobs.active[src] ~= nil or Jobs.riders[src] ~= nil
+end
+
 local function copyRoute(route)
     local out = {}
     for k, v in pairs(route) do out[k] = v end
     return out
 end
 
-function Jobs.Take(src, spotId, routeId, hour)
-    if Jobs.active[src] then return false, 'You are already on a load.' end
+function Jobs.Validate(src, spotId, routeId, reach)
+    if Jobs.Busy(src) then return false, 'You are already on a load.' end
     if cooldown[src] and cooldown[src] > os.time() then
         return false, ('Wait %d seconds before taking another load.'):format(cooldown[src] - os.time())
     end
@@ -274,8 +362,8 @@ function Jobs.Take(src, spotId, routeId, hour)
 
     local ped = GetPlayerPed(src)
     local here = ped ~= 0 and GetEntityCoords(ped)
-    if not here or #(here - vector3(spot.laptop.x, spot.laptop.y, spot.laptop.z)) > 15.0 then
-        return false, 'You have to be at the laptop.'
+    if not here or #(here - vector3(spot.laptop.x, spot.laptop.y, spot.laptop.z)) > (reach or 15.0) then
+        return false, reach and 'Everyone has to be at the depot to roll out.' or 'You have to be at the laptop.'
     end
 
     local route = Spots.Route(routeId)
@@ -283,26 +371,32 @@ function Jobs.Take(src, spotId, routeId, hour)
         return false, 'That load is not on this board.'
     end
 
+    return true, { cid = cid, spot = spot, route = route }
+end
+
+local function spawnDriver(src, cid, spot, route, hour, convoyId)
     local profile = Progress.Profile(src)
     local locked = lockReason(route, profile, cid)
-    if locked then return false, ('Locked: %s.'):format(locked) end
+    if locked then return nil, ('Locked: %s.'):format(locked) end
 
     local truckRow = Garage.Selected(src, 'truck')
-    if truckRow and Jobs.UsingOwned(truckRow.id) then return false, 'Someone else is out in that truck.' end
-    if truckRow and truckRow.condition <= 0 then return false, 'Your truck needs repairing first.' end
+    if truckRow and Jobs.UsingOwned(truckRow.id) then return nil, 'Someone else is out in that truck.' end
+    if truckRow and truckRow.condition <= 0 then return nil, 'Your truck needs repairing first.' end
 
     local trailerRow = Garage.Selected(src, 'trailer')
     if trailerRow and (trailerRow.trailer_type ~= route.type or Jobs.UsingOwned(trailerRow.id)) then trailerRow = nil end
 
     local truckPoint = pickBay(spot.id, 'truck', spot.truckBays)
-    if not truckPoint then return false, 'Every truck bay is blocked. Clear one and try again.' end
+    if not truckPoint then return nil, 'Every truck bay is blocked. Clear one and try again.' end
 
-    local trailerPoint = route.pickup
-    if not trailerPoint then
+    local trailerPoint
+    if route.pickup and not convoyId then
+        trailerPoint = route.pickup
+        if not pointFree(trailerPoint) then return nil, 'Something is parked on the pickup point.' end
+    else
         trailerPoint = pickBay(spot.id, 'trailer', spot.trailerBays)
-        if not trailerPoint then return false, 'Every trailer bay is blocked. Clear one and try again.' end
-    elseif not pointFree(trailerPoint) then
-        return false, 'Something is parked on the pickup point.'
+        if not trailerPoint and route.pickup and pointFree(route.pickup) then trailerPoint = route.pickup end
+        if not trailerPoint then return nil, 'Every trailer bay is blocked. Clear one and try again.' end
     end
 
     local truckModel = truckRow and truckRow.model or spot.truckModel or Config.Trucks.depot.model
@@ -310,19 +404,18 @@ function Jobs.Take(src, spotId, routeId, hour)
     local trailerModel = trailerRow and trailerRow.model or route.model or kind.models[math.random(#kind.models)]
 
     local truck = spawn(truckModel, 'automobile', truckPoint)
-    if not truck then return false, ('The truck (%s) could not be spawned. Check the model name.'):format(truckModel) end
+    if not truck then return nil, ('The truck (%s) could not be spawned. Check the model name.'):format(truckModel) end
 
     local trailer = spawn(trailerModel, 'trailer', trailerPoint)
     if not trailer then
         remove(truck)
-        return false, ('The trailer (%s) could not be spawned. Check the model name.'):format(trailerModel)
+        return nil, ('The trailer (%s) could not be spawned. Check the model name.'):format(trailerModel)
     end
 
     local plate = truckRow and Garage.Plate(truckRow) or (Config.Job.platePrefix .. tostring(math.random(1000, 9999))):sub(1, 8)
     SetVehicleNumberPlateText(truck, plate)
 
     runSeq = runSeq + 1
-    local bizRow = truckRow and truckRow.company_id or nil
     local shop = truckRow and Util.ShopTruck(truckRow.model)
     local trailerShop = trailerRow and Util.ShopTrailer(trailerRow.model)
 
@@ -331,6 +424,8 @@ function Jobs.Take(src, spotId, routeId, hour)
         src = src,
         cid = cid,
         name = Framework.GetName(src),
+        role = 'driver',
+        convoy = convoyId,
         spot = spot.id,
         spotName = spot.name,
         route = copyRoute(route),
@@ -345,7 +440,7 @@ function Jobs.Take(src, spotId, routeId, hour)
         truck = {
             entity = truck, net = NetworkGetNetworkIdFromEntity(truck), model = truckModel, plate = plate,
             label = truckRow and (truckRow.nickname or truckRow.label) or Config.Trucks.depot.label,
-            owned = truckRow and truckRow.id or nil, bonus = shop and shop.bonus or 0, business = bizRow,
+            owned = truckRow and truckRow.id or nil, bonus = shop and shop.bonus or 0, business = truckRow and truckRow.company_id or nil,
         },
         trailer = {
             entity = trailer, net = NetworkGetNetworkIdFromEntity(trailer), model = trailerModel,
@@ -375,9 +470,121 @@ function Jobs.Take(src, spotId, routeId, hour)
     else
         props.fuel = 100
     end
+    job.props = props
+    return job
+end
 
-    TriggerClientEvent('XS-Trucking:client:runStarted', src, stateFor(job), props)
+local function spawnEscort(src, cid, spot, route, convoyId)
+    local cfg = Config.Coop.escort
+    local car, plate
+    local point = cfg.vehicle and pickBay(spot.id, 'truck', spot.truckBays) or nil
+    if point then
+        car = spawn(cfg.vehicle, 'automobile', point)
+        if car then
+            plate = ('ESCORT%02d'):format(math.random(0, 99))
+            SetVehicleNumberPlateText(car, plate)
+            Keys.Give(src, car, plate)
+        end
+    end
+
+    runSeq = runSeq + 1
+    local job = {
+        id = runSeq,
+        src = src,
+        cid = cid,
+        name = Framework.GetName(src),
+        role = 'escort',
+        convoy = convoyId,
+        spot = spot.id,
+        spotName = spot.name,
+        route = copyRoute(route),
+        stage = 'escort',
+        stop = 1,
+        startedAt = os.time(),
+        hot = 0,
+        truck = {
+            entity = car or 0, net = car and NetworkGetNetworkIdFromEntity(car) or nil, model = car and cfg.vehicle or nil,
+            plate = plate or '', label = car and 'Pilot car' or 'Your own car', pilot = car ~= nil,
+        },
+        trailer = { gone = true },
+    }
+    Jobs.active[src] = job
+    job.props = car and { plate = plate, fuel = 100 } or nil
+    return job
+end
+
+local function announce(job)
+    TriggerClientEvent('XS-Trucking:client:runStarted', job.src, stateFor(job), job.props)
+end
+
+function Jobs.Take(src, spotId, routeId, hour)
+    local ok, data = Jobs.Validate(src, spotId, routeId)
+    if not ok then return false, data end
+    if Coop.InCrew(src) then return false, 'You are in a crew. Leave it before taking a load on your own.' end
+
+    if needsEscort(data.route) then
+        return false, ('This load needs %d escort%s. Start a crew for it.'):format(data.route.escorts, data.route.escorts == 1 and '' or 's')
+    end
+
+    local job, err = spawnDriver(src, data.cid, data.spot, data.route, hour, nil)
+    if not job then return false, err end
+
+    announce(job)
     return true, stateFor(job)
+end
+
+function Jobs.StartCrew(lobby)
+    local spot = Spots.Get(lobby.spot)
+    local route = Spots.Route(lobby.route)
+    if not spot or not route or not route.enabled then return false, 'That load is gone.' end
+
+    local order = {}
+    for src, member in pairs(lobby.members) do order[#order + 1] = { src = src, role = member.role } end
+    table.sort(order, function(a, b)
+        if a.role ~= b.role then return a.role == 'driver' end
+        return a.src == lobby.lead
+    end)
+
+    for _, entry in ipairs(order) do
+        local ok, err = Jobs.Validate(entry.src, spot.id, route.id, 150.0)
+        if not ok then return false, ('%s: %s'):format(Framework.GetName(entry.src), err) end
+    end
+
+    runSeq = runSeq + 1
+    local convoyId = runSeq
+    local convoy = {
+        id = convoyId, spot = spot.id, route = route.id, lead = lobby.lead, members = {}, delivered = {}, presence = {},
+        startedAt = os.time(), drivers = 0,
+    }
+
+    local started = {}
+    for _, entry in ipairs(order) do
+        local cid = Framework.GetCitizenId(entry.src)
+        local job, err
+        if entry.role == 'driver' then
+            job, err = spawnDriver(entry.src, cid, spot, route, lobby.hour, convoyId)
+        else
+            job, err = spawnEscort(entry.src, cid, spot, route, convoyId)
+        end
+
+        if not job then
+            for _, done in ipairs(started) do
+                Jobs.active[done.src] = nil
+                remove(done.truck.entity)
+                if not done.trailer.gone then remove(done.trailer.entity) end
+            end
+            return false, ('%s: %s'):format(Framework.GetName(entry.src), err)
+        end
+
+        started[#started + 1] = job
+        convoy.members[entry.src] = { role = entry.role, name = job.name }
+        if entry.role == 'driver' then convoy.drivers = convoy.drivers + 1 end
+        if entry.role == 'escort' then convoy.presence[entry.src] = { hits = 0, samples = 0 } end
+    end
+
+    Jobs.convoys[convoyId] = convoy
+    for _, job in ipairs(started) do announce(job) end
+    return true, convoyId
 end
 
 local function tipOff(job)
@@ -388,8 +595,7 @@ local function tipOff(job)
     if not where then return end
 
     local street = lib.callback.await('XS-Trucking:client:street', job.src, where) or ''
-    local detail = ('Truck plate %s.'):format(job.truck.plate)
-    Dispatch.Alert(where, street, detail)
+    Dispatch.Alert(where, street, ('Truck plate %s.'):format(job.truck.plate))
     Framework.Notify(job.src, 'Someone reported your cargo. Expect the police.', 'error')
     push(job)
 end
@@ -418,7 +624,7 @@ function Jobs.Hooked(src)
     job.hookedAt = os.time()
 
     if job.route.illegal then rollTip(job, Progress.Stats(job.cid)) end
-    push(job)
+    if job.convoy then pushConvoy(Jobs.convoys[job.convoy]) else push(job) end
     return true
 end
 
@@ -430,6 +636,61 @@ local function dockScore(job, stop)
     local angle = Util.AngleDiff(where.h, stop.h)
     if dist > cfg.maxDistance or angle > cfg.maxAngle then return 0 end
     return (1 - dist / cfg.maxDistance) * 0.5 + (1 - angle / cfg.maxAngle) * 0.5
+end
+
+local function inCab(job)
+    local co = job.codriver
+    if not co then return false end
+    local ped = GetPlayerPed(co.src)
+    return ped ~= 0 and GetVehiclePedIsIn(ped, false) == job.truck.entity
+end
+
+local escortDone, drop
+
+local function convoyCheck(convoy)
+    if not convoy or convoy.closed then return end
+    local waiting = false
+    for src, member in pairs(convoy.members) do
+        if member.role == 'driver' and not convoy.delivered[src] then
+            local job = Jobs.active[src]
+            if job and job.convoy == convoy.id and job.stage ~= 'return' then waiting = true end
+        end
+    end
+    if waiting then return end
+
+    convoy.closed = true
+    local delivered = 0
+    for src, member in pairs(convoy.members) do
+        if member.role == 'driver' and convoy.delivered[src] then delivered = delivered + 1 end
+    end
+
+    for src, member in pairs(convoy.members) do
+        local job = Jobs.active[src]
+        if member.role == 'escort' and job and job.convoy == convoy.id and job.stage == 'escort' then
+            if delivered > 0 then
+                escortDone(job, convoy)
+            else
+                drop(job, 'lost', 'The convoy never made it, so there is no escort pay.')
+            end
+        end
+    end
+end
+
+local function convoyTopUp(convoy, src, name)
+    local window = Config.Coop.convoy.windowMinutes * 60
+    local at = convoy.delivered[src]
+    for other, paid in pairs(convoy.paid or {}) do
+        if other ~= src and math.abs(at - paid.at) <= window and paid.got < paid.cap then
+            local add = math.min(paid.per, paid.cap - paid.got)
+            paid.got = paid.got + add
+            local amount = math.floor(paid.base * add / 100 * SGet('economy.payoutMult', 100) / 100)
+            if amount > 0 and Framework.GetCitizenId(other) == paid.cid then
+                Framework.AddMoney(other, paid.account, amount, 'XS-Trucking:convoy')
+                MySQL.update('UPDATE xs_trucking_stats SET total_earned = total_earned + ? WHERE citizenid = ?', { amount, paid.cid })
+                Framework.Notify(other, ('Convoy bonus: %s more now that %s delivered too.'):format(Util.Money(amount), name), 'success')
+            end
+        end
+    end
 end
 
 function Jobs.Deliver(src)
@@ -448,18 +709,43 @@ function Jobs.Deliver(src)
 
     if job.stop < #job.route.stops then
         job.stop = job.stop + 1
-        push(job)
+        if job.convoy then pushConvoy(Jobs.convoys[job.convoy]) else push(job) end
         return true, { final = false, stop = job.stop, stops = #job.route.stops }
     end
 
     job.dock = dockScore(job, stop)
     job.late = job.deadline and os.time() > job.deadline or false
     job.deliveredAt = os.time()
+    if job.codriver then job.codriver.present = inCab(job) end
     remove(job.trailer.entity)
     job.trailer.gone = true
     job.stage = 'return'
-    push(job)
+
+    local convoy = job.convoy and Jobs.convoys[job.convoy]
+    if convoy then
+        convoy.delivered[src] = os.time()
+        convoyTopUp(convoy, src, job.name)
+        convoyCheck(convoy)
+        pushConvoy(convoy)
+    else
+        push(job)
+    end
     return true, { final = true, dock = job.dock, late = job.late }
+end
+
+local function convoyBonus(job, mods)
+    local convoy = job.convoy and Jobs.convoys[job.convoy]
+    if not convoy or not job.deliveredAt then return 0 end
+    local window = Config.Coop.convoy.windowMinutes * 60
+    local others = 0
+    for src, member in pairs(convoy.members) do
+        local at = convoy.delivered[src]
+        if member.role == 'driver' and src ~= job.src and at and math.abs(at - job.deliveredAt) <= window then
+            others = others + 1
+        end
+    end
+    local per = SGet('coop.convoyBonus', Config.Coop.convoy.bonusPerTruck) + (mods.convoy or 0)
+    return math.min(Config.Coop.convoy.maxBonus + (mods.convoy or 0), others * per)
 end
 
 local function payout(job, damage, km)
@@ -487,6 +773,7 @@ local function payout(job, damage, km)
         skills = math.floor(mods.pay or 0),
         dock = math.floor((mods.dock or 0) * (job.dock or 0)),
         business = job.truck.business and bizMods.pay or 0,
+        convoy = convoyBonus(job, mods),
     }
 
     local r = Config.Pay.rating
@@ -512,6 +799,62 @@ local function payout(job, damage, km)
     }
 end
 
+local function logDelivery(values)
+    MySQL.insert([[
+        INSERT INTO xs_trucking_deliveries
+            (citizenid, contract_id, label, cargo_type, base_payout, final_payout, driver_cut, company_cut, company_id,
+             truck_bonus_pct, hot_bonus_pct, multistop_bonus_pct, rating_bonus_pct, skill_bonus_pct, coop_bonus_pct,
+             spoiled, trip_rating, stop_count, xp, distance_m, duration_seconds, spot_id, route_id, role, illegal)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULLIF(?, 0), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ]], values)
+end
+
+local function paySide(src, cid, name, route, amount, xp, role, spot, illegal)
+    if amount > 0 then
+        if illegal then
+            Framework.AddMoney(src, Config.Illegal.payout.account or 'cash', amount, 'XS-Trucking:' .. role)
+        else
+            Framework.AddMoney(src, Config.Payout.account, amount, 'XS-Trucking:' .. role)
+        end
+    end
+
+    local stats = Progress.Stats(cid, name)
+    local newXp = stats.xp + xp
+    MySQL.update.await('UPDATE xs_trucking_stats SET xp = ?, level = ?, total_earned = total_earned + ?, name = ? WHERE citizenid = ?',
+        { newXp, Util.LevelForXp(newXp), amount, name, cid })
+
+    logDelivery({
+        cid, tostring(route.id), route.label, route.type, route.pay, amount, amount, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 100, #route.stops, xp, 0, 0, spot, route.id, role, illegal and 1 or 0,
+    })
+
+    return newXp > stats.xp and Util.LevelForXp(newXp) > stats.level
+end
+
+local function payCodriver(job, result)
+    local co = job.codriver
+    if not co then return end
+    Jobs.riders[co.src] = nil
+
+    if not co.present or not GetPlayerName(co.src) then
+        TriggerClientEvent('XS-Trucking:client:runEnded', co.src, 'cleared', { message = 'You were not in the cab at the drop, so there is no co-driver pay.' })
+        return
+    end
+
+    local cfg = Config.Coop.codriver
+    local amount = math.floor(job.route.pay * SGet('coop.codriverCut', cfg.cut) / 100 * SGet('economy.payoutMult', 100) / 100)
+    local xp = math.floor(result.xp * (cfg.xp or 50) / 100)
+    local leveled = paySide(co.src, co.cid, co.name, job.route, amount, xp, 'codriver', job.spot, job.route.illegal)
+    local level = Util.LevelForXp(Progress.Stats(co.cid).xp)
+
+    TriggerClientEvent('XS-Trucking:client:runEnded', co.src, 'done', {
+        label = job.route.label, cargo = job.route.cargo, base = amount, total = amount, driver = amount, business = 0,
+        xp = xp, score = result.score, parts = {}, role = 'codriver', driverName = job.name, illegal = job.route.illegal,
+        leveled = leveled, level = level, title = Util.LevelTitle(level), minutes = math.floor((os.time() - job.startedAt) / 60),
+        km = 0,
+    })
+end
+
 local function finish(job, fuel)
     Jobs.active[job.src] = nil
 
@@ -520,6 +863,17 @@ local function finish(job, fuel)
     local result = payout(job, damage, km)
     local route = job.route
     local cid, src = job.cid, job.src
+
+    local crew = job.convoy and Jobs.convoys[job.convoy]
+    if crew and job.deliveredAt then
+        crew.paid = crew.paid or {}
+        crew.paid[src] = {
+            cid = cid, at = job.deliveredAt, base = route.pay, got = result.parts.convoy,
+            per = SGet('coop.convoyBonus', Config.Coop.convoy.bonusPerTruck) + (result.mods.convoy or 0),
+            cap = Config.Coop.convoy.maxBonus + (result.mods.convoy or 0),
+            account = route.illegal and (Config.Illegal.payout.account or 'cash') or Config.Payout.account,
+        }
+    end
 
     local driverPay, bizPay = result.total, 0
     local biz = result.biz
@@ -568,18 +922,14 @@ local function finish(job, fuel)
         Garage.ApplyTrip(Garage.Row(job.truck.owned), km * 1.6, damage, cid, fuel)
     end
 
-    MySQL.insert([[
-        INSERT INTO xs_trucking_deliveries
-            (citizenid, contract_id, label, cargo_type, base_payout, final_payout, driver_cut, company_cut, company_id,
-             truck_bonus_pct, hot_bonus_pct, multistop_bonus_pct, rating_bonus_pct, skill_bonus_pct, coop_bonus_pct,
-             spoiled, trip_rating, stop_count, xp, distance_m, duration_seconds, spot_id, route_id, role, illegal)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULLIF(?, 0), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ]], {
+    logDelivery({
         cid, tostring(route.id), route.label, route.type, result.base, result.total, driverPay, bizPay, job.truck.business or 0,
         result.parts.truck + result.parts.trailer, result.parts.hot, result.parts.multi, result.parts.rating,
-        result.parts.skills + result.parts.dock, 0, result.late and 1 or 0, result.score, #route.stops, result.xp,
+        result.parts.skills + result.parts.dock, result.parts.convoy, result.late and 1 or 0, result.score, #route.stops, result.xp,
         math.floor(km * 1000), os.time() - job.startedAt, job.spot, route.id, 'driver', route.illegal and 1 or 0,
     })
+
+    payCodriver(job, result)
 
     remove(job.truck.entity)
     if not job.trailer.gone then remove(job.trailer.entity) end
@@ -588,13 +938,57 @@ local function finish(job, fuel)
         label = route.label, cargo = route.cargo, base = result.base, total = result.total, driver = driverPay,
         business = bizPay, xp = result.xp, score = result.score, parts = result.parts, late = result.late,
         fragile = result.fragile, dock = math.floor((result.dock or 0) * 100), illegal = route.illegal,
-        item = paidItem and Config.Illegal.payout.item or nil,
+        item = paidItem and Config.Illegal.payout.item or nil, role = 'driver',
         level = newLevel, leveled = newLevel > stats.level, title = Util.LevelTitle(newLevel),
         minutes = math.floor((os.time() - job.startedAt) / 60),
         km = Util.Round(km, 2),
     }
     TriggerClientEvent('XS-Trucking:client:runEnded', src, 'done', summary)
+
+    local convoy = job.convoy and Jobs.convoys[job.convoy]
+    if convoy then
+        convoyCheck(convoy)
+        pushConvoy(convoy)
+    end
     return summary
+end
+
+local function escortPay(job, convoy)
+    local cfg = Config.Coop.escort
+    local stat = convoy and convoy.presence[job.src] or { hits = 0, samples = 0 }
+    local presence = stat.samples > 0 and math.floor(stat.hits / stat.samples * 100) or 0
+    local share = math.min(1, presence / math.max(1, cfg.presence))
+    local mods = Progress.Mods(job.cid, {})
+    local amount = math.floor(job.route.pay * (SGet('coop.escortCut', cfg.cut) + (mods.escort or 0)) / 100
+        * SGet('economy.payoutMult', 100) / 100 * share)
+    local xp = math.floor((job.route.xp or 0) * 0.5 * share)
+    return amount, xp, presence
+end
+
+local function closeEscort(job, convoy)
+    Jobs.active[job.src] = nil
+    local amount, xp, presence = escortPay(job, convoy)
+    local leveled = paySide(job.src, job.cid, job.name, job.route, amount, xp, 'escort', job.spot, job.route.illegal)
+    local level = Util.LevelForXp(Progress.Stats(job.cid).xp)
+    if job.truck.pilot then remove(job.truck.entity) end
+
+    TriggerClientEvent('XS-Trucking:client:runEnded', job.src, 'done', {
+        label = job.route.label, cargo = job.route.cargo, base = amount, total = amount, driver = amount, business = 0,
+        xp = xp, score = presence, parts = {}, role = 'escort', presence = presence, illegal = job.route.illegal,
+        leveled = leveled, level = level, title = Util.LevelTitle(level),
+        minutes = math.floor((os.time() - job.startedAt) / 60), km = 0,
+    })
+end
+
+escortDone = function(job, convoy)
+    if job.truck.pilot and DoesEntityExist(job.truck.entity) then
+        job.stage = 'return'
+        job.escortClosed = true
+        push(job)
+        Framework.Notify(job.src, 'The convoy made it. Take the pilot car back to get paid.', 'success')
+        return
+    end
+    closeEscort(job, convoy)
 end
 
 function Jobs.Return(src, fuel)
@@ -602,29 +996,48 @@ function Jobs.Return(src, fuel)
     if not job or job.stage ~= 'return' then return false, 'Nothing to bring back.' end
 
     local truck = coords(job.truck.entity)
-    if not truck then return false, 'The truck is gone.' end
+    if not truck then return false, 'The vehicle is gone.' end
 
     local parked = false
     for _, point in ipairs(Spots.ReturnPoints(job.spot)) do
         if Util.Near(truck, point, Config.Job.returnRadius) then parked = true break end
     end
-    if not parked then return false, 'Park the truck in a return bay.' end
+    if not parked then return false, 'Park it in a return bay.' end
 
+    if job.role == 'escort' then
+        closeEscort(job, job.convoy and Jobs.convoys[job.convoy])
+        return true
+    end
     return true, finish(job, tonumber(fuel))
 end
 
-local function drop(job, reason, message)
+drop = function(job, reason, message)
     Jobs.active[job.src] = nil
     remove(job.truck.entity)
     if not job.trailer.gone then remove(job.trailer.entity) end
     TriggerClientEvent('XS-Trucking:client:runEnded', job.src, reason, { message = message })
+
+    if job.codriver then
+        Jobs.riders[job.codriver.src] = nil
+        TriggerClientEvent('XS-Trucking:client:runEnded', job.codriver.src, reason, { message = 'The load you were riding along on was dropped.' })
+    end
+
+    local convoy = job.convoy and Jobs.convoys[job.convoy]
+    if convoy then
+        convoy.members[job.src] = nil
+        convoyCheck(convoy)
+        pushConvoy(convoy)
+    end
 end
 
 function Jobs.Cancel(src)
     local job = Jobs.active[src]
-    if not job then return false, 'You are not on a load.' end
+    if not job then
+        if Jobs.riders[src] then return Jobs.LeaveRide(src) end
+        return false, 'You are not on a load.'
+    end
 
-    local fee = SGet('economy.cancelFee', Config.Job.cancelFee)
+    local fee = job.role == 'escort' and 0 or SGet('economy.cancelFee', Config.Job.cancelFee)
     if fee > 0 then
         local paid = Framework.RemoveMoney(src, Config.Payout.account, fee, 'XS-Trucking:cancel')
             or Framework.RemoveMoney(src, 'cash', fee, 'XS-Trucking:cancel')
@@ -636,8 +1049,34 @@ function Jobs.Cancel(src)
     return true
 end
 
+function Jobs.AddRider(driverSrc, riderSrc)
+    local job = Jobs.active[driverSrc]
+    if not job or job.role ~= 'driver' or job.stage == 'return' then return false, 'That load is not taking riders.' end
+    if job.codriver then return false, 'They already have a co-driver.' end
+    if Jobs.Busy(riderSrc) then return false, 'You are already on a load.' end
+
+    job.codriver = { src = riderSrc, cid = Framework.GetCitizenId(riderSrc), name = Framework.GetName(riderSrc) }
+    Jobs.riders[riderSrc] = driverSrc
+    TriggerClientEvent('XS-Trucking:client:runStarted', riderSrc, stateFor(job, riderSrc), nil)
+    push(job)
+    return true, job.name
+end
+
+function Jobs.LeaveRide(riderSrc)
+    local driverSrc = Jobs.riders[riderSrc]
+    Jobs.riders[riderSrc] = nil
+    local job = driverSrc and Jobs.active[driverSrc]
+    if job and job.codriver and job.codriver.src == riderSrc then
+        job.codriver = nil
+        push(job)
+        Framework.Notify(driverSrc, 'Your co-driver left.', 'inform')
+    end
+    TriggerClientEvent('XS-Trucking:client:runEnded', riderSrc, 'cancelled', { message = 'You left the cab.' })
+    return true
+end
+
 function Jobs.Clear(cid)
-    for src, job in pairs(Jobs.active) do
+    for _, job in pairs(Jobs.active) do
         if job.cid == cid then
             drop(job, 'cleared', 'An admin cleared your load.')
             return true
@@ -649,11 +1088,12 @@ end
 function Jobs.List()
     local out = {}
     for src, job in pairs(Jobs.active) do
-        local where = coords(job.truck.entity)
+        local where = coords(job.truck.entity) or coords(GetPlayerPed(src))
         out[#out + 1] = {
             source = src, citizenid = job.cid, name = job.name, spot = job.spotName, route = job.route.label,
             routeId = job.route.id, stage = job.stage, stop = job.stop, stops = #job.route.stops, illegal = job.route.illegal,
-            tipped = job.tipped == true, startedAt = job.startedAt, plate = job.truck.plate,
+            tipped = job.tipped == true, startedAt = job.startedAt, plate = job.truck.plate, role = job.role,
+            convoy = job.convoy, codriver = job.codriver and job.codriver.name or nil,
             coords = where and { x = where.x, y = where.y } or nil,
         }
     end
@@ -662,15 +1102,58 @@ function Jobs.List()
 end
 
 CreateThread(function()
+    local tick = 0
     while true do
         Wait(5000)
+        tick = tick + 1
+
         for _, job in pairs(Jobs.active) do
-            if not DoesEntityExist(job.truck.entity) then
+            if job.role == 'escort' then
+                if job.truck.pilot and not DoesEntityExist(job.truck.entity) then
+                    drop(job, 'lost', 'Your pilot car is gone. The escort was called off.')
+                elseif not job.convoy or not Jobs.convoys[job.convoy] then
+                    drop(job, 'lost', 'The convoy is gone.')
+                end
+            elseif not DoesEntityExist(job.truck.entity) then
                 drop(job, 'lost', 'Your truck is gone. The load was lost.')
             elseif not job.trailer.gone and not DoesEntityExist(job.trailer.entity) then
                 drop(job, 'lost', 'The trailer is gone. The load was lost.')
             elseif GetVehicleEngineHealth(job.truck.entity) <= -3999.0 then
                 drop(job, 'lost', 'Your truck was destroyed. The load was lost.')
+            end
+        end
+
+        for id, convoy in pairs(Jobs.convoys) do
+            local anyone = false
+            for src in pairs(convoy.members) do
+                if Jobs.active[src] and Jobs.active[src].convoy == id then anyone = true break end
+            end
+            if not anyone then
+                Jobs.convoys[id] = nil
+            else
+                local moving = {}
+                for src, member in pairs(convoy.members) do
+                    local job = Jobs.active[src]
+                    if member.role == 'driver' and job and job.convoy == id and job.stage == 'enroute' then
+                        moving[#moving + 1] = coords(job.truck.entity)
+                    end
+                end
+
+                if #moving > 0 then
+                    for src, member in pairs(convoy.members) do
+                        local stat = convoy.presence[src]
+                        if member.role == 'escort' and stat then
+                            local here = coords(GetPlayerPed(src))
+                            local close = false
+                            for _, truck in ipairs(moving) do
+                                if here and truck and Util.Distance2D(here, truck) <= Config.Coop.escort.range then close = true break end
+                            end
+                            stat.samples = stat.samples + 1
+                            if close then stat.hits = stat.hits + 1 end
+                        end
+                    end
+                    if tick % 3 == 0 then pushConvoy(convoy) end
+                end
             end
         end
     end
@@ -679,10 +1162,14 @@ end)
 AddEventHandler('playerDropped', function()
     local src = source
     local job = Jobs.active[src]
-    if job then
-        Jobs.active[src] = nil
-        remove(job.truck.entity)
-        if not job.trailer.gone then remove(job.trailer.entity) end
+    if job then drop(job, 'lost', '') end
+    if Jobs.riders[src] then
+        local driver = Jobs.active[Jobs.riders[src]]
+        if driver and driver.codriver and driver.codriver.src == src then
+            driver.codriver = nil
+            push(driver)
+        end
+        Jobs.riders[src] = nil
     end
     cooldown[src] = nil
 end)
