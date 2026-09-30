@@ -8,6 +8,7 @@ XS.Pages.loads = (() => {
     let poll = null;
     let busy = false;
 
+    const NEARBY = 4500;
     const isCoop = (l) => !!(l.convoy || l.escorts > 0);
     const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
@@ -224,11 +225,71 @@ XS.Pages.loads = (() => {
         </div>`;
     }
 
-    function routesFor(ctx) {
-        return (ctx.board.loads || []).map((l) => ({
-            id: l.id, illegal: l.illegal,
-            points: [l.origin || ctx.board.spot.laptop, ...l.stops],
-        }));
+    function toneFor(l) {
+        if (l.locked) return 'grey';
+        if (l.illegal) return 'red';
+        if (l.hot) return 'amber';
+        if (isCoop(l)) return 'violet';
+        return 'cyan';
+    }
+
+    function markersFor(ctx) {
+        const laptop = ctx.board.spot.laptop;
+        const out = [{ type: 'depot', x: laptop.x, y: laptop.y, icon: 'loads', tone: 'white', label: ctx.board.spot.name }];
+        for (const l of loads(ctx)) {
+            const tone = toneFor(l);
+            const label = `${l.label} · ${XS.money(l.pay)}`;
+            if (l.id !== selected) {
+                out.push({ type: 'load', x: l.stops[0].x, y: l.stops[0].y, tone, label, pick: l.id });
+                continue;
+            }
+            if (l.remotePickup && l.origin) out.push({ type: 'pickup', x: l.origin.x, y: l.origin.y, tone, icon: 'pin', label: 'Trailer pickup', pick: l.id });
+            l.stops.forEach((s, i) => out.push({
+                type: 'drop', x: s.x, y: s.y, tone, active: true, pick: l.id, bubble: i === 0,
+                number: l.stops.length > 1 ? i + 1 : null, label: `Drop ${i + 1}`,
+            }));
+        }
+        return out;
+    }
+
+    function nearby(ctx, l) {
+        const depot = ctx.board.spot.laptop;
+        return Math.hypot(l.stops[0].x - depot.x, l.stops[0].y - depot.y) <= NEARBY;
+    }
+
+    function focusFor(ctx) {
+        const points = [ctx.board.spot.laptop];
+        for (const l of loads(ctx)) {
+            if (l.id !== selected && !nearby(ctx, l)) continue;
+            points.push(...l.stops);
+            if (l.remotePickup && l.origin) points.push(l.origin);
+        }
+        return points;
+    }
+
+    function moveEta() {
+        const bubble = host && host.querySelector('.eta');
+        if (!bubble || !bubble.dataset.ready) return;
+        const at = tilt && tilt.anchor();
+        if (!at || at.y < 70) {
+            bubble.style.opacity = 0;
+            return;
+        }
+        const half = bubble.offsetWidth / 2;
+        const room = host.querySelector('.mapcard').offsetWidth;
+        const x = Math.min(Math.max(at.x, half + 14), room - half - 14);
+        bubble.style.left = `${x}px`;
+        bubble.style.top = `${at.y}px`;
+        bubble.style.setProperty('--arrow', `${Math.max(-half + 18, Math.min(half - 18, at.x - x))}px`);
+        bubble.style.opacity = 1;
+    }
+
+    function choose(ctx, id) {
+        selected = id;
+        if (!loads(ctx).find((l) => l.id === selected)) filter = 'all';
+        tilt.show(markersFor(ctx), focusFor(ctx));
+        paint(ctx);
+        placeEta(ctx);
     }
 
     function placeEta(ctx) {
@@ -236,16 +297,14 @@ XS.Pages.loads = (() => {
         const bubble = host.querySelector('.eta');
         if (!bubble) return;
         const l = (ctx.board.loads || []).find((x) => x.id === selected);
-        if (!l) { bubble.style.opacity = 0; return; }
-        bubble.innerHTML = `<b>${XS.esc(l.label)}</b><span>${XS.dist(l.km)} · ${l.minutes} min · ${XS.money(l.pay)}</span>`;
+        delete bubble.dataset.ready;
         bubble.style.opacity = 0;
+        if (!l) return;
+        bubble.innerHTML = `<b>${XS.esc(l.label)}</b><span>${XS.dist(l.km)} · ${l.minutes} min · ${XS.money(l.pay)}</span>`;
         etaTimer = setTimeout(() => {
-            const at = tilt && tilt.anchor();
-            if (!at) return;
-            bubble.style.left = `${at.x}px`;
-            bubble.style.top = `${Math.max(90, at.y)}px`;
-            bubble.style.opacity = 1;
-        }, 1150);
+            bubble.dataset.ready = '1';
+            moveEta();
+        }, 350);
     }
 
     function paint(ctx, keep) {
@@ -324,14 +383,14 @@ XS.Pages.loads = (() => {
                 <div class="maphead"></div><div class="glass eta" style="opacity:0"></div><div class="carousel"></div></div>
             <div class="side"></div></div>`;
 
-        tilt = XS.Tilt.create(el.querySelector('.tiltbox'));
+        tilt = XS.Tilt.create(el.querySelector('.tiltbox'), { onPick: (id) => choose(ctx, id), onMove: moveEta });
         const carousel = el.querySelector('.carousel');
         carousel.addEventListener('wheel', (e) => {
             if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
             carousel.scrollLeft += e.deltaY;
             e.preventDefault();
         }, { passive: false });
-        tilt.show(routesFor(ctx), selected, ctx.board.spot.laptop);
+        tilt.show(markersFor(ctx), focusFor(ctx));
         paint(ctx);
         placeEta(ctx);
 
@@ -343,24 +402,15 @@ XS.Pages.loads = (() => {
             if (f) {
                 filter = f.dataset.filter;
                 const visible = loads(ctx);
-                if (!visible.find((l) => l.id === selected) && visible[0]) {
-                    selected = visible[0].id;
-                    tilt.select(selected);
-                    placeEta(ctx);
-                }
-                paint(ctx);
-                return;
-            }
-
-            const c = e.target.closest('[data-load]');
-            if (c) {
-                selected = Number(c.dataset.load);
-                if (!loads(ctx).find((l) => l.id === selected)) filter = 'all';
-                tilt.select(selected);
+                if (!visible.find((l) => l.id === selected) && visible[0]) selected = visible[0].id;
+                tilt.show(markersFor(ctx), focusFor(ctx));
                 paint(ctx);
                 placeEta(ctx);
                 return;
             }
+
+            const c = e.target.closest('[data-load]');
+            if (c) return choose(ctx, Number(c.dataset.load));
 
             const go = e.target.closest('[data-goto]');
             if (go) return XS.Laptop.go(go.dataset.goto);

@@ -123,6 +123,26 @@ XS.Pages.run = (() => {
         return 'Drop this load';
     }
 
+    function markersFor(ctx, run) {
+        const laptop = ctx.board.spot.laptop;
+        const home = run.stage === 'return';
+        const tone = run.illegal ? 'red' : 'cyan';
+        const out = [{ type: 'depot', x: laptop.x, y: laptop.y, icon: 'loads', tone: home ? 'green' : 'white', active: home, label: ctx.board.spot.name }];
+        if (run.stage === 'hookup' && run.target) {
+            out.push({ type: 'pickup', x: run.target.x, y: run.target.y, icon: 'pin', tone: 'amber', active: true, label: 'Your trailer' });
+        }
+        run.stops.forEach((s, i) => {
+            const n = i + 1;
+            const done = home || (run.stage === 'enroute' && n < run.stop);
+            const now = (run.stage === 'enroute' || run.stage === 'escort') && n === run.stop;
+            out.push({
+                type: 'drop', x: s.x, y: s.y, tone, active: now, done, icon: done ? 'check' : null,
+                number: !done && run.stops.length > 1 ? n : null, label: run.stops.length > 1 ? `Drop ${n}` : 'Drop point',
+            });
+        });
+        return out;
+    }
+
     function empty() {
         return `<div class="glass" style="height:100%;display:grid;place-items:center"><div class="empty">${XS.icon('run')}<h3>You are not on a load</h3>
             <p>Pick one on the Loads page. Your truck will be waiting in a bay.</p><button class="btn primary" data-goto="loads">${XS.icon('loads')}See loads</button></div></div>`;
@@ -201,9 +221,8 @@ XS.Pages.run = (() => {
                 </div>
             </div></div>`;
 
-        const route = [run.stage === 'hookup' && run.target ? run.target : null, ...run.stops].filter(Boolean);
         tilt = XS.Tilt.create(el.querySelector('.tiltbox'));
-        tilt.show([{ id: 1, illegal: run.illegal, points: route.length > 1 ? route : [ctx.board.spot.laptop, ...run.stops] }], 1);
+        tilt.show(markersFor(ctx, run));
         paintLive();
         live(XS.Hud.last());
         if (run.crew || run.role === 'driver') poll = setInterval(refreshRun, 4000);
