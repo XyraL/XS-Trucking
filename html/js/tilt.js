@@ -71,7 +71,7 @@ XS.Tilt = (() => {
             view((minX + maxX) / 2, (minY + maxY) / 2 + spanPx * 0.08, unitsWide);
         }
 
-        function draw() {
+        function draw(still) {
             const others = svg.querySelector('.others');
             const chosen = svg.querySelector('.chosen');
             const marks = svg.querySelector('.marks');
@@ -83,17 +83,21 @@ XS.Tilt = (() => {
 
             for (const route of routes) {
                 if (route.id === selected) continue;
-                others.appendChild(el('path', { d: path(route.points), class: 'other', 'stroke-width': w(4), 'stroke-dasharray': `${w(12)} ${w(10)}` }));
+                others.appendChild(el('path', { d: path(route.line || route.points), class: 'other', 'stroke-width': w(4), 'stroke-dasharray': `${w(12)} ${w(10)}` }));
             }
 
             const pick = routes.find((r) => r.id === selected);
             if (pick) {
-                const d = path(pick.points);
+                const d = path(pick.line || pick.points);
                 chosen.appendChild(el('path', { d, class: 'glow', 'stroke-width': w(22) }));
                 const main = el('path', { d, class: `main${pick.illegal ? ' illegal' : ''}`, 'stroke-width': w(10) });
                 chosen.appendChild(main);
                 const len = main.getTotalLength();
                 main.style.setProperty('--len', len);
+                if (still) {
+                    main.style.animation = 'none';
+                    main.style.strokeDashoffset = '0';
+                }
 
                 const first = pick.points[0];
                 const last = pick.points[pick.points.length - 1];
@@ -117,7 +121,7 @@ XS.Tilt = (() => {
             routes = (list || []).filter((r) => r.points && r.points.length > 1);
             selected = id;
             const pick = routes.find((r) => r.id === id);
-            if (pick) frame(pick.points);
+            if (pick) frame(pick.line || pick.points);
             else if (fallback) {
                 const [cx, cy] = toPx(fallback.x, fallback.y);
                 view(cx, cy, 4200);
@@ -128,8 +132,15 @@ XS.Tilt = (() => {
         function select(id) {
             selected = id;
             const pick = routes.find((r) => r.id === id);
-            if (pick) frame(pick.points);
+            if (pick) frame(pick.line || pick.points);
             draw();
+        }
+
+        function update(list) {
+            const before = routes.find((r) => r.id === selected);
+            routes = (list || []).filter((r) => r.points && r.points.length > 1);
+            const after = routes.find((r) => r.id === selected);
+            draw(!!before && !!after && before.line === after.line);
         }
 
         function anchor() {
@@ -141,7 +152,7 @@ XS.Tilt = (() => {
             return { x: (r.left + r.width / 2 - h.left) / s, y: (r.top - h.top) / s };
         }
 
-        return { show, select, anchor, world };
+        return { show, select, update, anchor, world };
     }
 
     return { create };

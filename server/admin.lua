@@ -61,7 +61,11 @@ guarded('deleteRoute', function(src, id)
     return true, builderData()
 end)
 
-guarded('suggestPay', function(_, draft)
+guarded('roadLength', function(_, routeId, spotId, meters)
+    return Spots.SetRoad(routeId, spotId, meters)
+end)
+
+guarded('suggestPay', function(_, draft, meters)
     if type(draft) ~= 'table' then return nil end
     local spot = Spots.Get(draft.spot)
     local route = {
@@ -71,7 +75,7 @@ guarded('suggestPay', function(_, draft)
     }
     if #route.stops == 0 then return nil end
     local origin = route.pickup or (spot and spot.trailerBays[1]) or nil
-    return Spots.SuggestPay(route, origin)
+    return Spots.SuggestPay(route, origin, Spots.PlausibleRoad(route, origin, meters))
 end)
 
 local function number(value)

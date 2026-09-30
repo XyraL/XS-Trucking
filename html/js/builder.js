@@ -161,6 +161,13 @@ XS.Builder = (() => {
             <button class="btn primary" data-save>${XS.icon('check')}Save</button></div>`;
     }
 
+    function routePoints() {
+        if (!draft || sel.kind !== 'route' || !draft.stops.length) return null;
+        const spot = data.spots.find((s) => s.id === draft.spot) || data.spots[0];
+        const origin = draft.pickup || (spot && spot.trailerBays[0]);
+        return origin ? [origin, ...draft.stops] : null;
+    }
+
     function drawMap() {
         if (!map || !draft) return;
         map.clear();
@@ -179,7 +186,10 @@ XS.Builder = (() => {
             }
             if (draft.pickup) map.marker(draft.pickup, '#ffb547', 'Pickup', 16);
             if (origin) all.push(origin);
-            map.line([origin, ...draft.stops], draft.illegal ? '#ff5d6c' : '#38d9ff', false);
+            const points = routePoints();
+            const known = points && XS.Paths.get(points);
+            map.line(known ? known.line : [origin, ...draft.stops], draft.illegal ? '#ff5d6c' : '#38d9ff', false);
+            if (points) XS.Paths.want([{ points, route: draft.id, spot: spot && spot.id, report: !!draft.id && !dirty }]);
             draft.stops.forEach((p, i) => { map.marker(p, '#8f7dff', `Drop ${i + 1}`, 16); all.push(p); });
         }
         map.fit(all.length ? all : [player]);
@@ -261,7 +271,9 @@ XS.Builder = (() => {
     }
 
     async function suggest() {
-        const res = await XS.rpc('suggestPay', draft);
+        const points = routePoints();
+        const known = points && XS.Paths.get(points);
+        const res = await XS.rpc('suggestPay', draft, known ? known.meters : null);
         if (!res.ok || !res.data) return XS.toast('Place a drop point first.', 'error');
         draft.pay = res.data.pay;
         draft.xp = res.data.xp;
@@ -425,6 +437,10 @@ XS.Builder = (() => {
         root.onchange = onInput;
         root.oninput = (e) => { if (e.target.matches('input[type=text], input:not([type])')) onInput(e); };
     }
+
+    XS.Paths.on(() => {
+        if (root && root.classList.contains('open') && sel && sel.kind === 'route') drawMap();
+    });
 
     function close() {
         if (!root) return;
