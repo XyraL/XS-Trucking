@@ -4,42 +4,47 @@ lua54 'yes'
 
 name 'XS-Trucking'
 author 'XyraL'
-description 'Civilian delivery-job loop for QBox/QBCore.'
-version '2.2.1'
+description 'Trucking job for Qbox and QBCore: trucking spots and routes built in game, skills, certificates, co-op, businesses and illegal runs.'
+version '3.0.0'
 
--- Works on QBox (qbx_core) OR QBCore (qb-core). The bridge auto-detects.
 dependencies {
     'ox_lib',
-    'ox_target',
     'oxmysql',
 }
 
 shared_scripts {
     '@ox_lib/init.lua',
     'config.lua',
+    'shared/util.lua',
 }
 
 client_scripts {
     'bridge/framework.lua',
+    'bridge/target.lua',
+    'bridge/keys.lua',
+    'bridge/fuel.lua',
+    'bridge/dispatch.lua',
+    'client/ui.lua',
     'client/main.lua',
-    -- After main.lua: reads its truckEntity/trailerEntity globals.
-    'client/fuel.lua',
-    'client/company.lua',
-    'client/admin.lua',
+    'client/placement.lua',
+    'client/job.lua',
+    'client/builder.lua',
 }
 
 server_scripts {
     '@oxmysql/lib/MySQL.lua',
     'bridge/framework.lua',
-    -- db.lua first: it owns the schema and everything below gates on the
-    -- DBReady flag it sets. settings.lua next — it reads that schema on boot
-    -- and everything after it resolves tunables through SGet().
+    'bridge/keys.lua',
+    'bridge/dispatch.lua',
+    'bridge/inventory.lua',
     'server/db.lua',
     'server/settings.lua',
-    'server/company.lua',
-    -- maintenance before main.lua, which calls Maintenance.* on job
-    -- completion and when building the garage payload.
-    'server/maintenance.lua',
+    'server/spots.lua',
+    'server/progress.lua',
+    'server/business.lua',
+    'server/garage.lua',
+    'server/jobs.lua',
+    'server/callbacks.lua',
     'server/admin.lua',
     'server/main.lua',
 }
@@ -48,15 +53,10 @@ ui_page 'html/index.html'
 
 files {
     'html/index.html',
-    'html/css/style.css',
-    'html/js/map.js',
-    -- Leaflet is vendored (BSD-2) — NUI has no reliable internet, so no CDN.
+    'html/css/*.css',
+    'html/js/*.js',
     'html/vendor/leaflet/leaflet.js',
     'html/vendor/leaflet/leaflet.css',
     'html/vendor/leaflet/images/*.png',
-    'html/vendor/leaflet/LICENSE.txt',
-    -- Map tile pyramid, shared with the MDT and admin panel.
     'html/assets/maps/tiles/*.webp',
-    'html/js/app.js',
-    'html/js/admin.js',
 }

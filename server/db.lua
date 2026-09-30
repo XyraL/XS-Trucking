@@ -1,44 +1,3 @@
--- ─────────────────────────────────────────────────────────────
--- Self-provisioning schema
--- Every table this resource uses creates and migrates itself on boot. There
--- is no SQL file to import and no upgrade step for server owners to
--- remember — dropping a new version in and restarting is the whole process.
---
--- This exists because the sibling `cipher-drugs` resource lost a testing
--- session to exactly the failure this prevents: an owner syncing files to a
--- host, the database still holding a previous version's schema, and every
--- query failing with column errors that pointed nowhere near the real cause.
--- A hand-maintained .sql file drifts from the code the moment anyone forgets
--- to update it. This file cannot drift, because it IS the schema.
---
--- Design rules carried over from that incident:
---   * SHOW COLUMNS wrapped in pcall, never INFORMATION_SCHEMA — the latter
---     silently returns nothing when the connection lacks schema privileges,
---     which reads as "column already present" and skips the migration.
---   * Failures print loudly and set DBFailed rather than pretending success.
---   * Nothing ever waits on this unboundedly. WaitForDB takes a timeout, so
---     a stalled boot degrades into a clear error instead of a callback that
---     never returns and a UI stuck on "Loading..." forever.
--- ─────────────────────────────────────────────────────────────
-
--- ── Callback safety net ──────────────────────────────────────
--- Wraps EVERY lib.callback.register in this resource so a handler that
--- errors still sends a response.
---
--- Without it the failure is invisible and total: an unhandled Lua error part
--- way through a callback means cb() is never called, so the client's
--- lib.callback.await never returns, so the NUI's fetch never settles, so the
--- panel sits on "Loading..." forever with nothing in the console to explain
--- it. The player sees a dead tab and there is no thread to pull.
---
--- server/company.lua already had a local `safeCall` doing this for its own 16
--- callbacks, added after that exact symptom on the Company tab. It was never
--- extended to the other 21 — which is why the Contracts tab could hang the
--- same way. Patching the registrar instead of each call site means every
--- callback is covered, including any added later.
---
--- Done here because db.lua is the first server file in fxmanifest, so the
--- override is in place before anything registers.
 do
     local _register = lib.callback.register
 
@@ -47,8 +6,7 @@ do
             local results = { pcall(fn, src, ...) }
 
             if not results[1] then
-                print(('^1[XS-Trucking]^0 callback "%s" errored — returning nil so the UI does not hang.\n  %s')
-                    :format(name, tostring(results[2])))
+                print(('^1[XS-Trucking]^0 callback "%s" errored: %s'):format(name, tostring(results[2])))
                 return nil
             end
 
@@ -57,335 +15,344 @@ do
     end
 end
 
-DBReady = false
-DBFailed = false
+DB = { ready = false, failed = false }
 
--- Presence marker. server/admin.lua's boot self-check looks for this to
--- catch a partial file upload — the failure mode where an owner copies some
--- new files to their host but not others, and the resource half-works in
--- ways that look like unrelated bugs.
-DBLoaded = true
-
-local function log(msg)
-    print(('^3[XS-Trucking]^0 %s'):format(msg))
-end
-
-local function logError(msg)
-    print(('^1[XS-Trucking]^0 %s'):format(msg))
-end
-
--- ── Schema ───────────────────────────────────────────────────
--- Order matters: xs_trucking_companies must exist before the four
--- tables that carry a foreign key onto it.
---
--- JSON columns are deliberately NULLable with no DEFAULT. A DEFAULT on a
--- LONGTEXT needs MySQL 8.0.13+ and isn't portable to older MariaDB builds,
--- and every reader already coalesces (`owned.upgrades or '{}'` in Lua,
--- `o.upgrades || '{}'` in the NUI), so nothing gains from the default.
 local TABLES = {
-    {
-        name = 'xs_trucking_stats',
-        sql = [[
-            CREATE TABLE IF NOT EXISTS `xs_trucking_stats` (
-                `citizenid`       VARCHAR(64)  NOT NULL,
-                `name`            VARCHAR(96)  NOT NULL DEFAULT '',
-                `xp`              INT          NOT NULL DEFAULT 0,
-                `level`           INT          NOT NULL DEFAULT 1,
-                `total_completed` INT          NOT NULL DEFAULT 0,
-                `total_earned`    INT          NOT NULL DEFAULT 0,
-                `rating_sum`      INT          NOT NULL DEFAULT 0,
-                PRIMARY KEY (`citizenid`)
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-        ]],
-    },
-    {
-        name = 'xs_trucking_companies',
-        sql = [[
-            CREATE TABLE IF NOT EXISTS `xs_trucking_companies` (
-                `id`               INT UNSIGNED NOT NULL AUTO_INCREMENT,
-                `name`             VARCHAR(64)  NOT NULL,
-                `label`            VARCHAR(64)  NOT NULL,
-                `owner`            VARCHAR(64)  NOT NULL,
-                `bank`             BIGINT       NOT NULL DEFAULT 0,
-                `reputation`       INT          NOT NULL DEFAULT 0,
-                `perk_points`      INT          NOT NULL DEFAULT 0,
-                `total_deliveries` INT          NOT NULL DEFAULT 0,
-                `created_at`       TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                PRIMARY KEY (`id`),
-                UNIQUE KEY `idx_name` (`name`)
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-        ]],
-    },
-    {
-        name = 'xs_trucking_owned',
-        sql = [[
-            CREATE TABLE IF NOT EXISTS `xs_trucking_owned` (
-                `id`                   INT UNSIGNED NOT NULL AUTO_INCREMENT,
-                `citizenid`            VARCHAR(64)  NOT NULL,
-                `company_id`           INT UNSIGNED NULL,
-                `kind`                 VARCHAR(16)  NOT NULL DEFAULT 'truck',
-                `model`                VARCHAR(64)  NOT NULL,
-                `label`                VARCHAR(96)  NOT NULL DEFAULT '',
-                `condition`            TINYINT      NOT NULL DEFAULT 100,
-                `dispatch_ready_at`    BIGINT       NULL,
-                `dispatch_contract_id` VARCHAR(64)  NULL,
-                `dispatch_payout`      INT          NULL,
-                `upgrades`             LONGTEXT     NULL,
-                `livery`               LONGTEXT     NULL,
-                -- JSON {fuel, tyres, brakes, oil, odometer}. One column
-                -- rather than five, so adding a wear component later is a
-                -- config change instead of another migration.
-                `maintenance`          LONGTEXT     NULL,
-                `purchased_at`         TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                PRIMARY KEY (`id`),
-                KEY `idx_citizen` (`citizenid`),
-                KEY `idx_company` (`company_id`)
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-        ]],
-    },
-    {
-        name = 'xs_trucking_deliveries',
-        sql = [[
-            CREATE TABLE IF NOT EXISTS `xs_trucking_deliveries` (
-                `id`                  INT UNSIGNED NOT NULL AUTO_INCREMENT,
-                `citizenid`           VARCHAR(64)  NOT NULL,
-                `contract_id`         VARCHAR(64)  NOT NULL,
-                `label`               VARCHAR(128) NOT NULL DEFAULT '',
-                `cargo_type`          VARCHAR(32)  NOT NULL DEFAULT '',
-                `base_payout`         INT          NOT NULL DEFAULT 0,
-                `final_payout`        INT          NOT NULL DEFAULT 0,
-                `driver_cut`          INT          NOT NULL DEFAULT 0,
-                `company_cut`         INT          NOT NULL DEFAULT 0,
-                `company_id`          INT UNSIGNED NULL,
-                `truck_bonus_pct`     INT          NOT NULL DEFAULT 0,
-                `hot_bonus_pct`       INT          NOT NULL DEFAULT 0,
-                `multistop_bonus_pct` INT          NOT NULL DEFAULT 0,
-                `rating_bonus_pct`    INT          NOT NULL DEFAULT 0,
-                `spoiled`             TINYINT      NOT NULL DEFAULT 0,
-                `trip_rating`         INT          NOT NULL DEFAULT 100,
-                `stop_count`          INT          NOT NULL DEFAULT 1,
-                `xp`                  INT          NOT NULL DEFAULT 0,
-                `distance_m`          INT          NOT NULL DEFAULT 0,
-                `duration_seconds`    INT          NOT NULL DEFAULT 0,
-                `completed_at`        TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                PRIMARY KEY (`id`),
-                KEY `idx_citizen` (`citizenid`),
-                KEY `idx_citizen_time` (`citizenid`, `completed_at`)
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-        ]],
-    },
-    {
-        -- Admin overrides for tunable Config values. A key is only present
-        -- once an admin has changed it; anything absent keeps tracking
-        -- config.lua, so editing the config file still works normally for
-        -- everything nobody has touched in-panel.
-        name = 'xs_trucking_settings',
-        sql = [[
-            CREATE TABLE IF NOT EXISTS `xs_trucking_settings` (
-                `key`        VARCHAR(64) NOT NULL,
-                `value`      TEXT        NOT NULL,
-                `updated_at` TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                PRIMARY KEY (`key`)
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-        ]],
-    },
-    {
-        name = 'xs_trucking_company_ranks',
-        sql = [[
-            CREATE TABLE IF NOT EXISTS `xs_trucking_company_ranks` (
-                `company_id`  INT UNSIGNED NOT NULL,
-                `grade`       INT          NOT NULL,
-                `name`        VARCHAR(48)  NOT NULL,
-                `permissions` LONGTEXT     NOT NULL,
-                PRIMARY KEY (`company_id`, `grade`),
-                CONSTRAINT `fk_company_ranks_company` FOREIGN KEY (`company_id`)
-                    REFERENCES `xs_trucking_companies` (`id`) ON DELETE CASCADE
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-        ]],
-    },
-    {
-        name = 'xs_trucking_company_members',
-        sql = [[
-            CREATE TABLE IF NOT EXISTS `xs_trucking_company_members` (
-                `company_id` INT UNSIGNED NOT NULL,
-                `citizenid`  VARCHAR(64)  NOT NULL,
-                `name`       VARCHAR(96)  NOT NULL DEFAULT '',
-                `grade`      INT          NOT NULL DEFAULT 0,
-                `joined_at`  TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                `last_seen`  BIGINT       NOT NULL DEFAULT 0,
-                PRIMARY KEY (`citizenid`),
-                KEY `idx_company` (`company_id`),
-                CONSTRAINT `fk_company_members_company` FOREIGN KEY (`company_id`)
-                    REFERENCES `xs_trucking_companies` (`id`) ON DELETE CASCADE
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-        ]],
-    },
-    {
-        name = 'xs_trucking_company_perks',
-        sql = [[
-            CREATE TABLE IF NOT EXISTS `xs_trucking_company_perks` (
-                `company_id` INT UNSIGNED NOT NULL,
-                `perk_id`    VARCHAR(48)  NOT NULL,
-                `bought_at`  TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                PRIMARY KEY (`company_id`, `perk_id`),
-                CONSTRAINT `fk_company_perks_company` FOREIGN KEY (`company_id`)
-                    REFERENCES `xs_trucking_companies` (`id`) ON DELETE CASCADE
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-        ]],
-    },
-    {
-        name = 'xs_trucking_company_ledger',
-        sql = [[
-            CREATE TABLE IF NOT EXISTS `xs_trucking_company_ledger` (
-                `id`         INT UNSIGNED NOT NULL AUTO_INCREMENT,
-                `company_id` INT UNSIGNED NOT NULL,
-                `citizenid`  VARCHAR(64)  NOT NULL DEFAULT '',
-                `name`       VARCHAR(96)  NOT NULL DEFAULT '',
-                `kind`       VARCHAR(16)  NOT NULL,
-                `amount`     BIGINT       NOT NULL,
-                `created_at` TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                PRIMARY KEY (`id`),
-                KEY `idx_company` (`company_id`),
-                CONSTRAINT `fk_company_ledger_company` FOREIGN KEY (`company_id`)
-                    REFERENCES `xs_trucking_companies` (`id`) ON DELETE CASCADE
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-        ]],
-    },
+    [[
+        CREATE TABLE IF NOT EXISTS `xs_trucking_stats` (
+            `citizenid` VARCHAR(64) NOT NULL,
+            `name` VARCHAR(96) NOT NULL DEFAULT '',
+            `xp` INT NOT NULL DEFAULT 0,
+            `level` INT NOT NULL DEFAULT 1,
+            `total_completed` INT NOT NULL DEFAULT 0,
+            `total_earned` INT NOT NULL DEFAULT 0,
+            `rating_sum` INT NOT NULL DEFAULT 0,
+            `heat` INT NOT NULL DEFAULT 0,
+            `heat_at` INT NOT NULL DEFAULT 0,
+            `illegal_runs` INT NOT NULL DEFAULT 0,
+            PRIMARY KEY (`citizenid`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ]],
+    [[
+        CREATE TABLE IF NOT EXISTS `xs_trucking_companies` (
+            `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+            `name` VARCHAR(64) NOT NULL,
+            `label` VARCHAR(64) NOT NULL,
+            `owner` VARCHAR(64) NOT NULL,
+            `bank` BIGINT NOT NULL DEFAULT 0,
+            `reputation` INT NOT NULL DEFAULT 0,
+            `perk_points` INT NOT NULL DEFAULT 0,
+            `total_deliveries` INT NOT NULL DEFAULT 0,
+            `logo` VARCHAR(255) NOT NULL DEFAULT '',
+            `logo_hidden` TINYINT NOT NULL DEFAULT 0,
+            `colour` VARCHAR(9) NOT NULL DEFAULT '#38d9ff',
+            `motto` VARCHAR(120) NOT NULL DEFAULT '',
+            `recruiting` TINYINT NOT NULL DEFAULT 1,
+            `member_tier` INT NOT NULL DEFAULT 0,
+            `fleet_tier` INT NOT NULL DEFAULT 0,
+            `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (`id`),
+            UNIQUE KEY `idx_name` (`name`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ]],
+    [[
+        CREATE TABLE IF NOT EXISTS `xs_trucking_owned` (
+            `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+            `citizenid` VARCHAR(64) NOT NULL,
+            `company_id` INT UNSIGNED NULL,
+            `kind` VARCHAR(16) NOT NULL DEFAULT 'truck',
+            `model` VARCHAR(64) NOT NULL,
+            `label` VARCHAR(96) NOT NULL DEFAULT '',
+            `trailer_type` VARCHAR(16) NULL,
+            `plate` VARCHAR(12) NULL,
+            `nickname` VARCHAR(40) NULL,
+            `reserved_for` VARCHAR(64) NULL,
+            `condition` TINYINT NOT NULL DEFAULT 100,
+            `dispatch_ready_at` BIGINT NULL,
+            `dispatch_contract_id` VARCHAR(64) NULL,
+            `dispatch_payout` INT NULL,
+            `upgrades` LONGTEXT NULL,
+            `livery` LONGTEXT NULL,
+            `maintenance` LONGTEXT NULL,
+            `purchased_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (`id`),
+            KEY `idx_citizen` (`citizenid`),
+            KEY `idx_company` (`company_id`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ]],
+    [[
+        CREATE TABLE IF NOT EXISTS `xs_trucking_deliveries` (
+            `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+            `citizenid` VARCHAR(64) NOT NULL,
+            `contract_id` VARCHAR(64) NOT NULL,
+            `label` VARCHAR(128) NOT NULL DEFAULT '',
+            `cargo_type` VARCHAR(32) NOT NULL DEFAULT '',
+            `base_payout` INT NOT NULL DEFAULT 0,
+            `final_payout` INT NOT NULL DEFAULT 0,
+            `driver_cut` INT NOT NULL DEFAULT 0,
+            `company_cut` INT NOT NULL DEFAULT 0,
+            `company_id` INT UNSIGNED NULL,
+            `truck_bonus_pct` INT NOT NULL DEFAULT 0,
+            `hot_bonus_pct` INT NOT NULL DEFAULT 0,
+            `multistop_bonus_pct` INT NOT NULL DEFAULT 0,
+            `rating_bonus_pct` INT NOT NULL DEFAULT 0,
+            `skill_bonus_pct` INT NOT NULL DEFAULT 0,
+            `coop_bonus_pct` INT NOT NULL DEFAULT 0,
+            `spoiled` TINYINT NOT NULL DEFAULT 0,
+            `trip_rating` INT NOT NULL DEFAULT 100,
+            `stop_count` INT NOT NULL DEFAULT 1,
+            `xp` INT NOT NULL DEFAULT 0,
+            `distance_m` INT NOT NULL DEFAULT 0,
+            `duration_seconds` INT NOT NULL DEFAULT 0,
+            `spot_id` INT UNSIGNED NULL,
+            `route_id` INT UNSIGNED NULL,
+            `role` VARCHAR(12) NOT NULL DEFAULT 'driver',
+            `illegal` TINYINT NOT NULL DEFAULT 0,
+            `completed_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (`id`),
+            KEY `idx_citizen` (`citizenid`),
+            KEY `idx_citizen_time` (`citizenid`, `completed_at`),
+            KEY `idx_company_time` (`company_id`, `completed_at`),
+            KEY `idx_time` (`completed_at`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ]],
+    [[
+        CREATE TABLE IF NOT EXISTS `xs_trucking_settings` (
+            `key` VARCHAR(64) NOT NULL,
+            `value` TEXT NOT NULL,
+            `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (`key`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ]],
+    [[
+        CREATE TABLE IF NOT EXISTS `xs_trucking_company_ranks` (
+            `company_id` INT UNSIGNED NOT NULL,
+            `grade` INT NOT NULL,
+            `name` VARCHAR(48) NOT NULL,
+            `permissions` LONGTEXT NOT NULL,
+            `cut` INT NOT NULL DEFAULT 60,
+            PRIMARY KEY (`company_id`, `grade`),
+            CONSTRAINT `fk_company_ranks_company` FOREIGN KEY (`company_id`)
+                REFERENCES `xs_trucking_companies` (`id`) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ]],
+    [[
+        CREATE TABLE IF NOT EXISTS `xs_trucking_company_members` (
+            `company_id` INT UNSIGNED NOT NULL,
+            `citizenid` VARCHAR(64) NOT NULL,
+            `name` VARCHAR(96) NOT NULL DEFAULT '',
+            `grade` INT NOT NULL DEFAULT 0,
+            `deliveries` INT NOT NULL DEFAULT 0,
+            `earned` BIGINT NOT NULL DEFAULT 0,
+            `joined_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            `last_seen` BIGINT NOT NULL DEFAULT 0,
+            PRIMARY KEY (`citizenid`),
+            KEY `idx_company` (`company_id`),
+            CONSTRAINT `fk_company_members_company` FOREIGN KEY (`company_id`)
+                REFERENCES `xs_trucking_companies` (`id`) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ]],
+    [[
+        CREATE TABLE IF NOT EXISTS `xs_trucking_company_perks` (
+            `company_id` INT UNSIGNED NOT NULL,
+            `perk_id` VARCHAR(48) NOT NULL,
+            `bought_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (`company_id`, `perk_id`),
+            CONSTRAINT `fk_company_perks_company` FOREIGN KEY (`company_id`)
+                REFERENCES `xs_trucking_companies` (`id`) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ]],
+    [[
+        CREATE TABLE IF NOT EXISTS `xs_trucking_company_ledger` (
+            `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+            `company_id` INT UNSIGNED NOT NULL,
+            `citizenid` VARCHAR(64) NOT NULL DEFAULT '',
+            `name` VARCHAR(96) NOT NULL DEFAULT '',
+            `kind` VARCHAR(16) NOT NULL,
+            `amount` BIGINT NOT NULL,
+            `note` VARCHAR(160) NOT NULL DEFAULT '',
+            `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (`id`),
+            KEY `idx_company` (`company_id`),
+            CONSTRAINT `fk_company_ledger_company` FOREIGN KEY (`company_id`)
+                REFERENCES `xs_trucking_companies` (`id`) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ]],
+    [[
+        CREATE TABLE IF NOT EXISTS `xs_trucking_spots` (
+            `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+            `name` VARCHAR(64) NOT NULL,
+            `data` LONGTEXT NULL,
+            `enabled` TINYINT NOT NULL DEFAULT 1,
+            `created_by` VARCHAR(64) NULL,
+            `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (`id`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ]],
+    [[
+        CREATE TABLE IF NOT EXISTS `xs_trucking_routes` (
+            `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+            `spot_id` INT UNSIGNED NOT NULL DEFAULT 0,
+            `label` VARCHAR(64) NOT NULL,
+            `data` LONGTEXT NULL,
+            `enabled` TINYINT NOT NULL DEFAULT 1,
+            `created_by` VARCHAR(64) NULL,
+            `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (`id`),
+            KEY `idx_spot` (`spot_id`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ]],
+    [[
+        CREATE TABLE IF NOT EXISTS `xs_trucking_skills` (
+            `citizenid` VARCHAR(64) NOT NULL,
+            `skill` VARCHAR(48) NOT NULL,
+            `rank` INT NOT NULL DEFAULT 1,
+            PRIMARY KEY (`citizenid`, `skill`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ]],
+    [[
+        CREATE TABLE IF NOT EXISTS `xs_trucking_certs` (
+            `citizenid` VARCHAR(64) NOT NULL,
+            `cert` VARCHAR(48) NOT NULL,
+            `earned_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (`citizenid`, `cert`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ]],
+    [[
+        CREATE TABLE IF NOT EXISTS `xs_trucking_admin_log` (
+            `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+            `citizenid` VARCHAR(64) NOT NULL DEFAULT '',
+            `name` VARCHAR(96) NOT NULL DEFAULT '',
+            `action` VARCHAR(48) NOT NULL,
+            `detail` VARCHAR(255) NOT NULL DEFAULT '',
+            `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (`id`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    ]],
 }
 
--- ── Column migrations ────────────────────────────────────────
--- Only relevant to databases created by an OLDER version of this resource;
--- a fresh install already has every column from the CREATE TABLE above and
--- these all no-op. `ADD COLUMN IF NOT EXISTS` is deliberately NOT used —
--- it needs MySQL 8.0.29+ / MariaDB 10.5+, and silently erroring on older
--- builds is exactly the kind of half-migration this file exists to avoid.
-local MIGRATIONS = {
-    { table = 'xs_trucking_stats', column = 'rating_sum',
-      sql = 'ALTER TABLE `xs_trucking_stats` ADD COLUMN `rating_sum` INT NOT NULL DEFAULT 0' },
+local COLUMNS = {
+    { 'xs_trucking_stats', 'rating_sum', 'INT NOT NULL DEFAULT 0' },
+    { 'xs_trucking_stats', 'heat', 'INT NOT NULL DEFAULT 0' },
+    { 'xs_trucking_stats', 'heat_at', 'INT NOT NULL DEFAULT 0' },
+    { 'xs_trucking_stats', 'illegal_runs', 'INT NOT NULL DEFAULT 0' },
 
-    { table = 'xs_trucking_owned', column = 'company_id',
-      sql = 'ALTER TABLE `xs_trucking_owned` ADD COLUMN `company_id` INT UNSIGNED NULL' },
-    { table = 'xs_trucking_owned', column = 'kind',
-      sql = 'ALTER TABLE `xs_trucking_owned` ADD COLUMN `kind` VARCHAR(16) NOT NULL DEFAULT \'truck\'' },
-    { table = 'xs_trucking_owned', column = 'dispatch_ready_at',
-      sql = 'ALTER TABLE `xs_trucking_owned` ADD COLUMN `dispatch_ready_at` BIGINT NULL' },
-    { table = 'xs_trucking_owned', column = 'dispatch_contract_id',
-      sql = 'ALTER TABLE `xs_trucking_owned` ADD COLUMN `dispatch_contract_id` VARCHAR(64) NULL' },
-    { table = 'xs_trucking_owned', column = 'dispatch_payout',
-      sql = 'ALTER TABLE `xs_trucking_owned` ADD COLUMN `dispatch_payout` INT NULL' },
-    { table = 'xs_trucking_owned', column = 'upgrades',
-      sql = 'ALTER TABLE `xs_trucking_owned` ADD COLUMN `upgrades` LONGTEXT NULL' },
-    { table = 'xs_trucking_owned', column = 'livery',
-      sql = 'ALTER TABLE `xs_trucking_owned` ADD COLUMN `livery` LONGTEXT NULL' },
-    { table = 'xs_trucking_owned', column = 'maintenance',
-      sql = 'ALTER TABLE `xs_trucking_owned` ADD COLUMN `maintenance` LONGTEXT NULL' },
+    { 'xs_trucking_owned', 'company_id', 'INT UNSIGNED NULL' },
+    { 'xs_trucking_owned', 'kind', "VARCHAR(16) NOT NULL DEFAULT 'truck'" },
+    { 'xs_trucking_owned', 'trailer_type', 'VARCHAR(16) NULL' },
+    { 'xs_trucking_owned', 'plate', 'VARCHAR(12) NULL' },
+    { 'xs_trucking_owned', 'nickname', 'VARCHAR(40) NULL' },
+    { 'xs_trucking_owned', 'reserved_for', 'VARCHAR(64) NULL' },
+    { 'xs_trucking_owned', 'dispatch_ready_at', 'BIGINT NULL' },
+    { 'xs_trucking_owned', 'dispatch_contract_id', 'VARCHAR(64) NULL' },
+    { 'xs_trucking_owned', 'dispatch_payout', 'INT NULL' },
+    { 'xs_trucking_owned', 'upgrades', 'LONGTEXT NULL' },
+    { 'xs_trucking_owned', 'livery', 'LONGTEXT NULL' },
+    { 'xs_trucking_owned', 'maintenance', 'LONGTEXT NULL' },
 
-    { table = 'xs_trucking_companies', column = 'perk_points',
-      sql = 'ALTER TABLE `xs_trucking_companies` ADD COLUMN `perk_points` INT NOT NULL DEFAULT 0' },
-    { table = 'xs_trucking_companies', column = 'total_deliveries',
-      sql = 'ALTER TABLE `xs_trucking_companies` ADD COLUMN `total_deliveries` INT NOT NULL DEFAULT 0' },
+    { 'xs_trucking_companies', 'perk_points', 'INT NOT NULL DEFAULT 0' },
+    { 'xs_trucking_companies', 'total_deliveries', 'INT NOT NULL DEFAULT 0' },
+    { 'xs_trucking_companies', 'logo', "VARCHAR(255) NOT NULL DEFAULT ''" },
+    { 'xs_trucking_companies', 'logo_hidden', 'TINYINT NOT NULL DEFAULT 0' },
+    { 'xs_trucking_companies', 'colour', "VARCHAR(9) NOT NULL DEFAULT '#38d9ff'" },
+    { 'xs_trucking_companies', 'motto', "VARCHAR(120) NOT NULL DEFAULT ''" },
+    { 'xs_trucking_companies', 'recruiting', 'TINYINT NOT NULL DEFAULT 1' },
+    { 'xs_trucking_companies', 'member_tier', 'INT NOT NULL DEFAULT 0' },
+    { 'xs_trucking_companies', 'fleet_tier', 'INT NOT NULL DEFAULT 0' },
+
+    { 'xs_trucking_company_ranks', 'cut', 'INT NOT NULL DEFAULT 60', after = function()
+        MySQL.update.await("UPDATE `xs_trucking_company_ranks` SET `cut` = 85 WHERE `permissions` = '*'")
+    end },
+    { 'xs_trucking_company_members', 'deliveries', 'INT NOT NULL DEFAULT 0' },
+    { 'xs_trucking_company_members', 'earned', 'BIGINT NOT NULL DEFAULT 0' },
+    { 'xs_trucking_company_ledger', 'note', "VARCHAR(160) NOT NULL DEFAULT ''" },
+
+    { 'xs_trucking_deliveries', 'skill_bonus_pct', 'INT NOT NULL DEFAULT 0' },
+    { 'xs_trucking_deliveries', 'coop_bonus_pct', 'INT NOT NULL DEFAULT 0' },
+    { 'xs_trucking_deliveries', 'spot_id', 'INT UNSIGNED NULL' },
+    { 'xs_trucking_deliveries', 'route_id', 'INT UNSIGNED NULL' },
+    { 'xs_trucking_deliveries', 'role', "VARCHAR(12) NOT NULL DEFAULT 'driver'" },
+    { 'xs_trucking_deliveries', 'illegal', 'TINYINT NOT NULL DEFAULT 0' },
 }
 
--- Returns true / false / nil, where nil means "couldn't determine". A nil
--- result skips the migration rather than blindly running it — re-adding an
--- existing column is a hard error, and guessing wrong would abort the boot.
 local function columnExists(tableName, column)
-    local ok, result = pcall(function()
-        return MySQL.query.await(('SHOW COLUMNS FROM `%s` LIKE ?'):format(tableName), { column })
-    end)
-    if not ok then return nil end
-    if type(result) ~= 'table' then return nil end
-    return #result > 0
+    local ok, rows = pcall(MySQL.query.await, ('SHOW COLUMNS FROM `%s` LIKE ?'):format(tableName), { column })
+    if not ok or type(rows) ~= 'table' then return nil end
+    return #rows > 0
 end
 
-local function runMigrations()
-    local applied = 0
-    for _, m in ipairs(MIGRATIONS) do
-        local exists = columnExists(m.table, m.column)
-        if exists == false then
-            local ok, err = pcall(function() MySQL.query.await(m.sql) end)
-            if ok then
-                applied = applied + 1
-                log(('migrated: added %s.%s'):format(m.table, m.column))
-            else
-                logError(('migration FAILED for %s.%s — %s'):format(m.table, m.column, tostring(err)))
-            end
-        elseif exists == nil then
-            logError(('could not inspect %s.%s — skipping its migration. If you see column errors later, add it by hand.')
-                :format(m.table, m.column))
-        end
+local LEGACY_TRAILERS = {
+    trailers4 = { type = 'reefer', model = 'trailers2' },
+    tr2 = { type = 'flatbed', model = 'trflat' },
+}
+
+local function migrateTrailers()
+    local rows = MySQL.query.await("SELECT `id`, `model` FROM `xs_trucking_owned` WHERE `kind` = 'trailer' AND `trailer_type` IS NULL") or {}
+    for _, row in ipairs(rows) do
+        local legacy = LEGACY_TRAILERS[row.model]
+        local shop = Util.ShopTrailer(row.model)
+        local kind = legacy and legacy.type or (shop and shop.type) or 'dryvan'
+        MySQL.update.await('UPDATE `xs_trucking_owned` SET `trailer_type` = ?, `model` = ? WHERE `id` = ?',
+            { kind, legacy and legacy.model or row.model, row.id })
     end
-    return applied
+    return #rows
 end
 
--- ── Boot ─────────────────────────────────────────────────────
-CreateThread(function()
-    -- oxmysql starting after this resource is normal and not an error; it
-    -- just means the first queries have to wait for it.
+function DB.Install()
     local waited = 0
     while GetResourceState('oxmysql') ~= 'started' do
         Wait(200)
         waited = waited + 200
         if waited >= 30000 then
-            DBFailed = true
-            logError('oxmysql never started — XS-Trucking cannot run. Check your server.cfg ensure order.')
-            return
+            print('^1[XS-Trucking]^0 oxmysql never started. Check the ensure order in server.cfg.')
+            return false
         end
     end
 
-    -- oxmysql reports 'started' slightly before it will actually accept
-    -- queries; one cheap round-trip confirms the connection is live.
     local connected = false
     for _ = 1, 25 do
-        local ok = pcall(function() MySQL.scalar.await('SELECT 1') end)
-        if ok then connected = true break end
+        if pcall(MySQL.scalar.await, 'SELECT 1') then connected = true break end
         Wait(400)
     end
-
     if not connected then
-        DBFailed = true
-        logError('could not reach the database after 10s. XS-Trucking will not function until this is fixed.')
-        return
+        print('^1[XS-Trucking]^0 could not reach the database.')
+        return false
     end
 
-    local created = 0
-    for _, t in ipairs(TABLES) do
-        local ok, err = pcall(function() MySQL.query.await(t.sql) end)
+    for _, statement in ipairs(TABLES) do
+        local ok, err = pcall(MySQL.query.await, statement)
         if not ok then
-            DBFailed = true
-            logError(('FAILED creating `%s` — %s'):format(t.name, tostring(err)))
-            logError('Schema setup aborted. Nothing will work until this is resolved — the error above is the cause.')
-            return
+            print(('^1[XS-Trucking]^0 could not create a table: %s'):format(tostring(err)))
+            return false
         end
-        created = created + 1
     end
 
-    local migrated = runMigrations()
+    for _, entry in ipairs(COLUMNS) do
+        local exists = columnExists(entry[1], entry[2])
+        if exists == false then
+            local ok, err = pcall(MySQL.query.await, ('ALTER TABLE `%s` ADD COLUMN `%s` %s'):format(entry[1], entry[2], entry[3]))
+            if not ok then
+                print(('^1[XS-Trucking]^0 could not add %s.%s: %s'):format(entry[1], entry[2], tostring(err)))
+                return false
+            end
+            if entry.after then pcall(entry.after) end
+        elseif exists == nil then
+            print(('^1[XS-Trucking]^0 could not inspect %s.%s, skipped it.'):format(entry[1], entry[2]))
+        end
+    end
 
-    DBReady = true
-    log(('database ready — %d tables verified%s')
-        :format(created, migrated > 0 and (', %d column(s) migrated'):format(migrated) or ''))
-end)
+    pcall(migrateTrailers)
+    return true
+end
 
--- ── Gate ─────────────────────────────────────────────────────
--- BOUNDED, always. cipher-drugs shipped an unbounded `while not DBReady do`
--- and a single missing file turned every affected callback into a permanent
--- hang — the NUI just sat on "Loading..." with nothing in the console. A
--- timeout converts that into a visible failure instead of a mystery.
-function WaitForDB(timeoutMs)
-    if DBReady then return true end
-    if DBFailed then return false end
+function WaitForDB(timeout)
+    if DB.ready then return true end
+    if DB.failed then return false end
 
-    local waited = 0
-    local limit = timeoutMs or 10000
-    while not DBReady and not DBFailed and waited < limit do
+    local waited, limit = 0, timeout or 10000
+    while not DB.ready and not DB.failed and waited < limit do
         Wait(50)
         waited = waited + 50
     end
-
-    if not DBReady then
-        logError(('a query was made before the database finished setting up (waited %dms). Returning empty data.')
-            :format(waited))
-    end
-    return DBReady
+    return DB.ready
 end

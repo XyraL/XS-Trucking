@@ -1,553 +1,573 @@
 Config = {}
 
+-- Prints what the resource detected and why it refused things. Leave off on a live server.
 Config.Debug = false
 
--- ─────────────────────────────────────────────────────────────
--- Depot
--- Job blip, the world computer used to open the contract board, and the
--- truck/trailer spawn pools. All coordinates below marked "confirmed" were
--- given by the server owner via in-game testing — trust them as-is.
--- ─────────────────────────────────────────────────────────────
-Config.Trucking = {}
-
--- Map blip shown at the depot so players can find the job.
-Config.Trucking.jobLocation = vec4(1204.8883, -3117.1033, 5.5403, 2.6878)
-
-Config.Trucking.blip = {
-    sprite = 477,
-    color = 5,
-    scale = 0.8,
-    label = 'Trucking Depot',
+-- ── Admins ─────────────────────────────────────────────────────────────────
+-- /truckingadmin opens the admin panel and /truckingbuilder the builder.
+-- Any ONE of these is enough:
+--   add_ace group.admin xs.trucking allow        (in server.cfg)
+--   a framework permission group listed in groups
+--   a license listed in licenses (without the "license:" prefix)
+Config.Admin = {
+    command = 'truckingadmin',
+    builderCommand = 'truckingbuilder',
+    acePermission = 'xs.trucking',
+    groups = { 'god', 'admin' },
+    licenses = {},
 }
 
--- ox_target zone anchored on an EXISTING world computer prop — there is no
--- entity to attach to (nothing is spawned here), so this uses a box zone
--- centered on the coords/heading below rather than addLocalEntity.
-Config.Trucking.computerCoords = vec4(1209.09, -3114.97, 5.61, 75.18)
-Config.Trucking.computerZoneSize = vec3(0.5, 0.5, 1.0)
-Config.Trucking.computerZoneDistance = 2.0
+-- ── Other resources ────────────────────────────────────────────────────────
+-- 'auto' finds whatever is running. Set a name to force one.
+Config.Bridges = {
+    framework = 'auto',   -- 'qbox' or 'qbcore'
+    target = 'auto',      -- 'ox_target' or 'qb-target'
 
--- Truck spawn/return spots — confirmed ground-level by user testing.
--- Used for BOTH purposes: a random slot spawns the job truck on accept,
--- and the same 4-point pool is where the rig must be parked to return it
--- and complete the job.
-Config.Trucking.truckSpawns = {
-    vec4(1244.4124, -3135.5105, 5.8264, 270.9522),
-    vec4(1243.7046, -3142.3057, 5.8056, 271.0386),
-    vec4(1244.1990, -3149.2036, 5.8209, 270.3443),
-    vec4(1244.2622, -3155.7896, 5.8229, 270.6933),
+    -- Vehicle keys:
+    -- 'qbx_vehiclekeys', 'qb-vehiclekeys', 'qs-vehiclekeys', 'wasabi_carlock',
+    -- 'Renewed-Vehiclekeys', 'mk_vehiclekeys', 'cd_garage', 'okokGarage',
+    -- 't1ger_keys', 'vehicles_keys', 'custom' or 'none'.
+    keys = 'auto',
+
+    -- Fuel: 'ox_fuel', 'LegacyFuel', 'cdn-fuel', 'ps-fuel', 'lj-fuel' or 'none'.
+    -- Trucks are filled through it when they come out and read back when they
+    -- are parked, so owned trucks keep what was left in the tank.
+    fuel = 'auto',
+
+    -- Where illegal-run tip-offs go: 'XS-Dispatch', 'ps-dispatch',
+    -- 'qs-dispatch', 'cd_dispatch', 'core_dispatch', 'rcore_dispatch',
+    -- 'linden_outlawalert' or 'none' (a plain notification and a blip).
+    dispatch = 'auto',
+
+    -- Only used when illegal runs pay out an item (Config.Illegal.payout.item):
+    -- 'ox_inventory', 'qb-inventory', 'qs-inventory', 'ps-inventory' or 'none'.
+    inventory = 'auto',
 }
 
--- Trailer spawn points — confirmed ground-level by user testing.
-Config.Trucking.trailerSpawns = {
-    vec4(1273.9138, -3160.4355, 6.1377, 90.7130),
-    vec4(1273.3838, -3168.9919, 6.1392, 90.3086),
-    vec4(1272.8040, -3174.9897, 6.1591, 89.2655),
-    vec4(1272.3174, -3184.5920, 6.1424, 86.1031),
+-- Server event fired when keys = 'custom': TriggerEvent(name, source, plate, netId)
+Config.CustomKeysEvent = ''
+
+-- 'ox' uses ox_lib notifications, 'framework' uses Qbox/QBCore's own.
+Config.Notify = {
+    style = 'ox',
+    position = 'top-right',
 }
 
--- Canonical semi+trailer pair with matching hitch points. Swap freely —
--- just keep truck/trailer models that visually hitch together correctly.
-Config.Trucking.truckModel = 'hauler'
-Config.Trucking.trailerModel = 'trailers2'
+-- Account pay goes into, and the money symbol shown in the laptop.
+Config.Payout = {
+    account = 'bank',
+}
+Config.Currency = '$'
 
--- How close (meters) various interactions require you to be.
-Config.Trucking.hookupRadius = 6.0   -- player + truck + trailer, all near the trailer spawn
-Config.Trucking.deliverRadius = 8.0  -- player + rig, near the contract destination
-Config.Trucking.returnRadius = 8.0   -- rig, near a truck spawn/return spot
+-- Distances in the laptop: 'mi' or 'km'.
+Config.DistanceUnit = 'mi'
 
--- Which money account contract payouts are deposited into.
-Config.Trucking.payoutAccount = 'bank'
+-- ── The job ────────────────────────────────────────────────────────────────
+Config.Job = {
+    -- Put the driver in the cab when the truck comes out.
+    warpIntoTruck = true,
 
--- Vehicle keys integration — the truck spawns unlocked with hotwiring
--- disabled, but most servers also run a separate keys system that blocks
--- the engine until a vehicle is explicitly handed to a player, even so.
--- Options:
---   'qbx'            -> qbx_vehiclekeys (the standard QBox recipe's keys
---                        resource, a separate resource from qbx_core).
---                        Applied server-side (server/main.lua) since its
---                        GiveKeys export needs the server's own resolved
---                        vehicle handle — nothing else to configure.
---   'qb-vehiclekeys' -> TriggerEvent('vehiclekeys:client:SetOwner', plate)
---   'qs-vehiclekeys' -> exports['qs-vehiclekeys']:GiveKeys(plate)
---   'custom'         -> exports['XS-Trucking']:OnGiveKeys(vehicle, plate) -- implement your own handler
---   false            -> disabled (no keys system on this server)
--- Wrapped in pcall, so a wrong/missing export never hard-errors the script —
--- flip Config.Debug on to see the real error in console if the truck still
--- won't start after picking the right option.
-Config.Trucking.KeysResource = 'qbx'
+    -- Truck plates start with this. The rest is random.
+    platePrefix = 'XSTR',
 
--- Staff-only admin panel (company oversight — list/force-disband any
--- company). Grant in server.cfg, e.g.:
---   add_ace group.admin xs-trucking.admin allow
---   add_principal identifier.fivem:1234 group.admin
-Config.Trucking.AdminCommand = 'truckingadmin'
-Config.Trucking.AdminAce = 'xs-trucking.admin'
+    -- How close the trailer has to be to a drop point, and the truck to a
+    -- return point.
+    deliverRadius = 10.0,
+    returnRadius = 9.0,
 
--- How many entries the Leaderboard tab shows.
-Config.Trucking.leaderboardLimit = 10
+    -- Trucks can be brought back to any trucking spot, not only the one they
+    -- came from.
+    returnAnySpot = true,
 
--- Analytics tab: how many days back the earnings/distance charts cover.
-Config.Trucking.analyticsDays = 14
+    -- A truck bay counts as taken while any vehicle is this close to it.
+    bayClearRadius = 4.0,
 
--- Receipts tab: how many past deliveries to list. Rows are never deleted —
--- this only bounds what's fetched, so raising it later shows older runs
--- that were already recorded.
-Config.Trucking.historyLimit = 40
+    -- Dropping a load you have taken. The truck and trailer are taken back.
+    cancelFee = 250,
 
--- Cash charged per condition point restored at the Garage's Repair action.
-Config.Trucking.repairCostPerPoint = 15
+    -- A route with a timer pays this percent when it arrives late.
+    latePayPercent = 50,
 
--- Condition points lost per combined body+engine health point of damage an
--- owned truck takes during a delivery (GTA5 vehicle health maxes at 1000
--- per component, so losing all ~2000 combined health drains 100 condition —
--- i.e. a truck driven into the ground on one trip). Only applies to owned
--- trucks bought from the shop; the free depot truck never takes damage.
-Config.Trucking.conditionLossRate = 0.05
+    -- Seconds between being able to take loads, after cancelling one.
+    cancelCooldown = 60,
+}
 
--- ─────────────────────────────────────────────────────────────
--- Driver rating
--- A running average (0-100), separate from XP/level, tracking how clean
--- your driving is — applies to EVERY delivery regardless of which truck
--- you're using (unlike condition loss above, which is owned-truck only).
--- ratingDamageDivisor: combined body+engine health points of damage per 1
--- rating point lost on a single trip (e.g. 20 -> losing all ~2000 combined
--- health on one trip tanks that trip's score by 100, i.e. to 0).
--- Your rating average GOING INTO a delivery (not including that delivery's
--- own result) grants a small payout bonus/penalty at the thresholds below.
--- ─────────────────────────────────────────────────────────────
-Config.Trucking.ratingDamageDivisor = 20
-Config.Trucking.ratingBonusThreshold = 90   -- average >= this grants...
-Config.Trucking.ratingBonusPct = 5          -- ...this much extra payout
-Config.Trucking.ratingPenaltyThreshold = 50 -- average <= this applies...
-Config.Trucking.ratingPenaltyPct = 5        -- ...this much payout reduction
+-- ── Trailer types ──────────────────────────────────────────────────────────
+-- Every route hauls one of these. The load comes on its trailer: the spot
+-- hands it out at a trailer bay, or at the route's own pickup point.
+-- `cert` is the certificate a driver needs for it (false for none).
+Config.TrailerTypes = {
+    { id = 'dryvan',    label = 'Dry van',    models = { 'trailers3', 'trailers', 'trailers4' }, cert = false },
+    { id = 'reefer',    label = 'Reefer',     models = { 'trailers2' },                          cert = 'reefer' },
+    { id = 'flatbed',   label = 'Flatbed',    models = { 'trflat' },                             cert = 'flatbed' },
+    { id = 'logs',      label = 'Logs',       models = { 'trailerlogs' },                        cert = 'flatbed' },
+    { id = 'carhauler', label = 'Car hauler', models = { 'tr4' },                                cert = 'carhauler' },
+    { id = 'tanker',    label = 'Tanker',     models = { 'tanker', 'tanker2' },                  cert = 'hazmat' },
+    { id = 'container', label = 'Container',  models = { 'docktrailer' },                        cert = false },
+    { id = 'heavy',     label = 'Heavy haul', models = { 'freighttrailer', 'armytrailer' },      cert = 'oversize' },
+}
 
--- ─────────────────────────────────────────────────────────────
--- Fuel & maintenance
---
--- Everything here is expressed as a 0-100 percentage rather than litres or
--- kilometres of tread. It keeps every gauge on the same scale as the
--- existing `condition` bar, it means one shared UI component renders all of
--- them, and it sidesteps arguing about realistic consumption figures on a
--- map where a "long haul" is about 10 km.
---
--- Set `Config.Trucking.Maintenance.enabled = false` to switch the whole
--- system off; every hook checks it and the UI hides its panels.
--- ─────────────────────────────────────────────────────────────
-Config.Trucking.Maintenance = {
+-- ── Trucks ─────────────────────────────────────────────────────────────────
+-- The depot truck is free and always there. Bought trucks pay more on every
+-- load and keep their upgrades, paint and wear. Every truck here has to be a
+-- tractor unit that can hitch a trailer.
+Config.Trucks = {
+    depot = { model = 'hauler', label = 'Depot Hauler' },
+
+    shop = {
+        { model = 'packer',   label = 'Packer',         price = 15000, bonus = 10, level = 1 },
+        { model = 'phantom',  label = 'Phantom',        price = 35000, bonus = 20, level = 6 },
+        { model = 'phantom3', label = 'Phantom Custom', price = 65000, bonus = 30, level = 14 },
+    },
+
+    -- Owned trailers are optional. Hauling a load on your own trailer of the
+    -- same type pays `bonus` percent more.
+    trailers = {
+        { type = 'dryvan',  model = 'trailers3', label = 'Dry van',   price = 12000, bonus = 6 },
+        { type = 'reefer',  model = 'trailers2', label = 'Reefer',    price = 20000, bonus = 8 },
+        { type = 'flatbed', model = 'trflat',    label = 'Flatbed',   price = 16000, bonus = 7 },
+        { type = 'tanker',  model = 'tanker',    label = 'Tanker',    price = 30000, bonus = 10 },
+    },
+
+    -- What a truck can be sold back for, as a percent of what it cost.
+    sellBack = 55,
+}
+
+-- ── Truck parts ────────────────────────────────────────────────────────────
+-- Owned trucks only; the depot truck never wears. `perKm` is percent lost
+-- per kilometre, `perDamage` extra per point of body and engine damage.
+-- `cost` is a full replacement; part services cost what is worn of it.
+Config.Parts = {
     enabled = true,
-
-    Fuel = {
-        -- Percent of tank burned per kilometre driven. At 2.5, a full tank
-        -- covers ~40 km — roughly four long hauls — so refuelling is a real
-        -- part of the loop without becoming the main thing you do.
-        burnPerKm = 2.5,
-        -- Multiplier applied while a trailer is hitched. Deadheading home
-        -- after a drop is deliberately cheaper than the loaded leg out.
-        loadedMult = 1.45,
-        -- Idling still costs something, so leaving the engine running at a
-        -- delivery point isn't free.
-        idleBurnPerMinute = 0.4,
-        pricePerPercent = 22,
-        lowWarnPct = 20,
-        -- The free depot truck always starts full — new drivers shouldn't
-        -- meet this system before they've completed a single delivery.
-        -- Owned trucks keep whatever was left in the tank.
-        depotTruckStartsFull = true,
+    list = {
+        { id = 'engine', label = 'Engine', perKm = 0.30, perDamage = 0.004, cost = 4200 },
+        { id = 'tyres',  label = 'Tyres',  perKm = 0.85, perDamage = 0.004, cost = 1800 },
+        { id = 'brakes', label = 'Brakes', perKm = 0.60, perDamage = 0.005, cost = 1400 },
+        { id = 'oil',    label = 'Oil',    perKm = 0.45, perDamage = 0.001, cost = 900 },
     },
+    -- Body condition drops with damage taken on a run. Repair cost per point.
+    bodyLossPerDamage = 0.05,
+    bodyCostPerPoint = 15,
 
-    -- Owned trucks only, exactly like `condition` — the free depot truck
-    -- never accumulates wear. `perKm` is percent lost per kilometre driven;
-    -- `perDamagePoint` is extra wear per point of body+engine damage taken,
-    -- so hard driving wears parts faster than distance alone.
-    Wear = {
-        { id = 'tyres',  label = 'Tyres',  perKm = 0.85, perDamagePoint = 0.004, serviceCost = 1800,
-          warnAt = 25, help = 'Worn tyres reduce grip badly in corners and rain.' },
-        { id = 'brakes', label = 'Brakes', perKm = 0.60, perDamagePoint = 0.005, serviceCost = 1400,
-          warnAt = 25, help = 'Worn brakes make the rig take more damage in a collision.' },
-        { id = 'oil',    label = 'Oil',    perKm = 0.45, perDamagePoint = 0.001, serviceCost = 900,
-          warnAt = 20, help = 'Low oil slowly cooks the engine while you drive.' },
-    },
-
-    -- What actually happens when a component runs low. Kept deliberately
-    -- mild: this should add texture to a delivery, not strand players or
-    -- make an owned truck feel worse to drive than the free one.
-    Penalties = {
-        -- Below this, tyres call SetVehicleReduceGrip.
-        tyresGripBelow = 25,
-        -- Below this, brakes multiply condition loss from collisions.
-        brakesDamageBelow = 25,
-        brakesDamageMult = 1.6,
-        -- Below this, oil drains engine health slowly while driving.
-        oilEngineDrainBelow = 20,
-        oilEngineDrainPerMinute = 12.0,
-    },
-
-    -- Refuel points. Targeted with ox_target, drawn on the Route Map, and
-    -- validated by the diagnostics check. Add as many as you like — these
-    -- are placed near the default depot and the two dock/airport routes.
-    -- ⚠ VERIFY these sit on real forecourts on your map build before going
-    -- live; they were chosen from coordinates, not from standing there.
-    Stations = {
-        { label = 'Depot Pumps',      coords = vec3(1208.28, -3138.51, 5.53) },
-        { label = 'Elysian Fields',   coords = vec3(288.90, -1261.60, 29.29) },
-        { label = 'Great Ocean Hwy',  coords = vec3(-724.10, -935.32, 19.21) },
-        { label = 'Palomino Freeway', coords = vec3(1207.26, -1402.65, 35.22) },
-        { label = 'Route 68',         coords = vec3(1039.95, 2671.13, 39.55) },
-    },
-    stationRadius = 6.0,
+    -- What a worn part does on the road.
+    tyresGripBelow = 25,
+    brakesDamageBelow = 25,
+    brakesDamageMult = 1.6,
+    oilEngineDrainBelow = 20,
+    enginePowerBelow = 30,
+    warnBelow = 25,
 }
 
--- ─────────────────────────────────────────────────────────────
--- Performance upgrades
--- Bought incrementally per category on a specific OWNED truck (from its
--- Garage/Fleet card, not a separate shop catalog entry) — cost scales with
--- the level being bought (costPerLevel * next level). Applied via
--- SetVehicleMod when that truck spawns. Trailers never get these — no
--- engine/brakes/transmission to upgrade. modType values are standard GTA5
--- vehicle mod-type indices.
--- ─────────────────────────────────────────────────────────────
-Config.Trucking.PerformanceUpgrades = {
-    { id = 'engine',       label = 'Engine',       modType = 11, maxLevel = 4, costPerLevel = 3000 },
-    { id = 'brakes',       label = 'Brakes',       modType = 12, maxLevel = 3, costPerLevel = 2000 },
-    { id = 'transmission', label = 'Transmission', modType = 13, maxLevel = 3, costPerLevel = 2500 },
-    { id = 'suspension',   label = 'Suspension',   modType = 15, maxLevel = 4, costPerLevel = 2200 },
-}
+-- Filling up at a trucking spot's laptop, per percent of the tank.
+Config.DepotFuelPrice = 22
 
--- ─────────────────────────────────────────────────────────────
--- Truck liveries
--- Cosmetic only — no gameplay effect. A curated palette (not the full raw
--- GTA5 paint index range) applied via SetVehicleColours when the truck
--- spawns. Trucks only, same as performance upgrades — trailers don't get
--- these either.
--- ─────────────────────────────────────────────────────────────
-Config.Trucking.paintCost = 2500
-Config.Trucking.PaintColors = {
-    { id = 0,   label = 'Black' },
-    { id = 1,   label = 'Carbon Black' },
-    { id = 111, label = 'Race Yellow' },
-    { id = 27,  label = 'Red' },
-    { id = 64,  label = 'Ultra Blue' },
-    { id = 141, label = 'Forest Green' },
-    { id = 38,  label = 'Orange' },
-    { id = 88,  label = 'White' },
-    { id = 156, label = 'Graphite' },
-    { id = 3,   label = 'Silver' },
-}
-
--- ─────────────────────────────────────────────────────────────
--- Truck & trailer shop
--- Optional upgrades — the free depot truck/trailer (Config.Trucking.truckModel
--- / trailerModel) always work for `general` cargo. Buying and selecting a
--- shop truck adds payoutBonusPct on top of a contract's base payout. Shop
--- trailers are FUNCTIONAL, not cosmetic: any contract with a `cargoType`
--- other than 'general' requires you to own and select a trailer whose
--- cargoType matches (see Config.Trucking.Contracts' requiredTrailerType
--- below) — the free depot trailer only covers general freight. Model names
--- below are PLACEHOLDERS — verify with your own model-check command before
--- going live, same as the contract destinations above.
--- ─────────────────────────────────────────────────────────────
--- Deliberately different models from Config.Trucking.truckModel ('hauler')
--- so a purchased truck always looks distinct from the free depot rig.
---
--- ⚠ EVERY shop truck MUST be a tractor unit with a fifth wheel. A shop truck
--- is used for real contracts, and the whole job stalls at the hookup stage
--- if it physically can't couple to a trailer. Box trucks (mule/mule3/benson/
--- pounder) look the part but have NO hitch — they are not valid here.
--- Models must also stay unique across this table: findShopEntryByModel in
--- server/main.lua resolves an owned vehicle back to its shop entry by model
--- alone, so a duplicate would silently resolve to the wrong entry.
-Config.Trucking.Shop = {
-    { id = 'compact_hauler', kind = 'truck', label = 'Compact Hauler', model = 'packer',   price = 15000, payoutBonusPct = 10 },
-    { id = 'heavy_hauler',   kind = 'truck', label = 'Heavy Hauler',   model = 'phantom',  price = 35000, payoutBonusPct = 20 },
-    -- VERIFY BEFORE GOING LIVE: 'phantom3' (Phantom Custom) is a DLC model,
-    -- not base game. Confirm it exists on your build before shipping this
-    -- tier — swap in any other tractor unit if it doesn't. The two entries
-    -- above are base-game tractors and need no verification.
-    { id = 'elite_rig',      kind = 'truck', label = 'Elite Rig',      model = 'phantom3', price = 65000, payoutBonusPct = 35 },
-
-    -- Trailers — cargoType must match a contract's requiredTrailerType for
-    -- that contract to be selectable. VERIFY BEFORE GOING LIVE: confirm both
-    -- models exist on your build and visibly couple to the shop tractors
-    -- above; a trailer that won't hitch blocks every contract that requires
-    -- its cargoType.
-    { id = 'reefer_trailer',       kind = 'trailer', label = 'Refrigerated Trailer', model = 'trailers4', price = 20000, cargoType = 'refrigerated' },
-    { id = 'flatbed_trailer',      kind = 'trailer', label = 'Flatbed Trailer',      model = 'tr2',        price = 18000, cargoType = 'construction' },
-}
-
--- ─────────────────────────────────────────────────────────────
--- Achievements
--- Computed live from xs_trucking_stats every time the Career tab is
--- requested — no separate "earned" tracking table needed, just a threshold
--- check. type = 'total_completed' | 'level' | 'total_earned'.
--- ─────────────────────────────────────────────────────────────
-Config.TruckingAchievements = {
-    { id = 'first_delivery',  label = 'First Delivery',    description = 'Complete your first delivery', type = 'total_completed', value = 1 },
-    { id = 'reliable_hauler', label = 'Reliable Hauler',   description = 'Complete 10 deliveries',        type = 'total_completed', value = 10 },
-    { id = 'veteran_trucker', label = 'Veteran Trucker',   description = 'Complete 50 deliveries',        type = 'total_completed', value = 50 },
-    { id = 'master_trucker',  label = 'Master Trucker',    description = 'Reach the max trucking rank',   type = 'level', value = 5 },
-}
-
--- Bonus applied on top of the normal payout when a multi-stop contract
--- (one with a `stops` array instead of a single `destination`) is fully
--- completed — every stop delivered, not just the last one.
-Config.Trucking.multiStopBonusPct = 25
-
--- ─────────────────────────────────────────────────────────────
--- Contracts
--- minLevel gates which contracts show up on the job board for a given
--- player (see Config.TruckingLevels below). Each entry needs EITHER a
--- single `destination` (single-stop) OR a `stops` array of coords
--- (multi-stop — every stop must be delivered before the trailer despawns
--- and payout fires, with Config.Trucking.multiStopBonusPct added on top).
---
--- `requiredTrailerType`, if set, must match a Config.Trucking.Shop trailer's
--- `cargoType` the player owns and has selected — the free depot trailer
--- only covers cargoType = 'general' contracts (no requiredTrailerType).
--- `spoilTimeSeconds` (refrigerated only) — soft time limit: delivering
--- later than this doesn't fail the contract, just halves the payout.
---
--- Coordinates below are confirmed ground-level by user testing. This is
--- just a starting set — server owners can add/remove/edit entries in this
--- table freely, nothing else needs touching.
--- ─────────────────────────────────────────────────────────────
-Config.Trucking.Contracts = {
-    {
-        id = 'general_freight_01',
-        label = 'General Freight — Docks',
-        cargoType = 'general',
-        minLevel = 1,
-        destination = vec4(-509.84, -2852.44, 5.24, 45.51),
-        payout = 350,
-        xp = 40,
+-- ── Upgrades ───────────────────────────────────────────────────────────────
+-- Bought per owned truck in the Truck page. Performance levels cost
+-- `cost` times the level being bought.
+Config.Upgrades = {
+    performance = {
+        { id = 'engine',       label = 'Engine tune',  mod = 11, levels = 4, cost = 3000 },
+        { id = 'transmission', label = 'Transmission', mod = 13, levels = 3, cost = 2500 },
+        { id = 'brakes',       label = 'Brakes',       mod = 12, levels = 3, cost = 2000 },
+        { id = 'suspension',   label = 'Suspension',   mod = 15, levels = 4, cost = 2200 },
+        { id = 'turbo',        label = 'Turbo',        toggle = 18, levels = 1, cost = 9000 },
     },
-    {
-        id = 'general_freight_02',
-        label = 'General Freight — Airport',
-        cargoType = 'general',
-        minLevel = 1,
-        destination = vec4(-979.5997, -2865.0774, 14.1832, 59.9426),
-        payout = 400,
-        xp = 45,
-    },
-    {
-        id = 'reefer_freight_01',
-        label = 'Refrigerated Goods — Movie Set',
-        cargoType = 'refrigerated',
-        minLevel = 2,
-        requiredTrailerType = 'refrigerated',
-        spoilTimeSeconds = 480, -- 8 minutes enroute before payout is halved
-        destination = vec4(-1025.7351, -516.4412, 36.4587, 25.0652),
-        payout = 650,
-        xp = 70,
-    },
-    {
-        id = 'construction_freight_01',
-        label = 'Construction Materials — Vinewood',
-        cargoType = 'construction',
-        minLevel = 3,
-        requiredTrailerType = 'construction',
-        destination = vec4(457.0935, 224.7394, 103.3604, 339.5320),
-        payout = 900,
-        xp = 100,
-    },
-    {
-        id = 'multidrop_freight_01',
-        label = 'Regional Multi-Drop — Docks & Airport',
-        cargoType = 'general',
-        minLevel = 3,
-        -- Reuses the two confirmed general-freight spots as a sequential
-        -- two-stop route rather than needing brand new coordinates.
-        stops = {
-            vec4(-509.84, -2852.44, 5.24, 45.51),
-            vec4(-979.5997, -2865.0774, 14.1832, 59.9426),
+
+    paint = {
+        cost = 2500,
+        colours = {
+            { id = 0,   label = 'Black',        hex = '#0d0e10' },
+            { id = 1,   label = 'Graphite',     hex = '#2a2c30' },
+            { id = 4,   label = 'Silver',       hex = '#9aa0a8' },
+            { id = 111, label = 'Frost white',  hex = '#eef0f2' },
+            { id = 27,  label = 'Red',          hex = '#b3121b' },
+            { id = 38,  label = 'Orange',       hex = '#e8611a' },
+            { id = 89,  label = 'Race yellow',  hex = '#f2c300' },
+            { id = 53,  label = 'Green',        hex = '#1d6b3a' },
+            { id = 64,  label = 'Blue',         hex = '#1d3f8f' },
+            { id = 70,  label = 'Bright blue',  hex = '#2e8fd6' },
+            { id = 145, label = 'Purple',       hex = '#4b2a7a' },
+            { id = 135, label = 'Hot pink',     hex = '#e83e8c' },
         },
-        payout = 500,
-        xp = 90,
+    },
+
+    lights = { cost = 3500 },   -- xenon headlights, with a colour pick
+    tint = { cost = 1200 },     -- window tint, three shades
+    horns = { cost = 1500, list = { 'Truck horn', 'Cop horn', 'Clown horn', 'Musical 1', 'Musical 2', 'Musical 3' } },
+}
+
+-- ── Levels ─────────────────────────────────────────────────────────────────
+-- Total XP to reach level n is base × (n - 1) ^ exponent. With the defaults a
+-- normal load is about 100 XP, level 10 takes around 45 loads and level 50
+-- around 600. Every level gives skill points to spend in the skill tree.
+Config.Levels = {
+    max = 50,
+    base = 150,
+    exponent = 1.55,
+    skillPointsPerLevel = 1,
+
+    -- The title shown from each level on.
+    titles = {
+        [1] = 'Rookie Hauler',
+        [3] = 'Regional Driver',
+        [6] = 'Long-Haul Trucker',
+        [10] = 'Road Captain',
+        [15] = 'Owner-Operator',
+        [20] = 'Freight Veteran',
+        [30] = 'Highway Legend',
+        [40] = 'King of the Road',
+        [50] = 'Master Trucker',
     },
 }
 
--- ─────────────────────────────────────────────────────────────
--- Hot contracts
--- A small rotating set of bonus-payout contracts shown separately on the
--- board, refreshed every rotateMinutes — same idea as XS-CriminalTablet's boosting
--- "wanted vehicles". Picked from `pool` (same shape as Config.Trucking.Contracts,
--- `payout`/`xp` here are the BASE values before payoutBonusPct is applied).
--- Rotation is computed lazily (checked whenever the contract board is
--- requested), not on a persistent timer, so it survives resource restarts
--- without losing its schedule.
--- ─────────────────────────────────────────────────────────────
-Config.Trucking.HotContracts = {
+-- ── Certificates ───────────────────────────────────────────────────────────
+-- Earned in the laptop once a driver has the level and deliveries, for the
+-- fee. Trailer types above and single routes can require one.
+Config.Certificates = {
+    { id = 'reefer',    label = 'Refrigerated Freight', level = 2,  deliveries = 5,  fee = 2500,
+      description = 'Reefer trailers. Food and medical loads that have to arrive on time.' },
+    { id = 'flatbed',   label = 'Flatbed & Timber',     level = 4,  deliveries = 15, fee = 5000,
+      description = 'Flatbeds and log trailers. Construction materials and timber.' },
+    { id = 'carhauler', label = 'Car Hauler',           level = 8,  deliveries = 30, fee = 9000,
+      description = 'Car carriers. Dealership stock and auction lots.' },
+    { id = 'hazmat',    label = 'Hazmat & Tanker',      level = 12, deliveries = 50, fee = 15000,
+      description = 'Tankers. Fuel and chemicals, with the pay to match.' },
+    { id = 'oversize',  label = 'Oversize Loads',       level = 16, deliveries = 80, fee = 25000,
+      description = 'Heavy haul. Transformers and machinery, usually with an escort.' },
+}
+
+-- ── Skill tree ─────────────────────────────────────────────────────────────
+-- Five branches. Each skill has ranks bought with skill points; `requires`
+-- lists skills that need at least one rank first. Effects apply per rank:
+--   pay       percent more pay        (when: minKm, minWeight, night, types, illegal, business, oversize)
+--   xp        percent more XP
+--   wear      percent less part wear
+--   repair    percent off repairs and services
+--   upgrade   percent off upgrades
+--   rating    percent less rating lost to damage
+--   dock      percent bonus for a clean reverse into the drop point
+--   timer     percent more time on timed loads
+--   convoy    extra convoy bonus percent
+--   escort    percent more escort pay
+--   cut       percent more of a business load's pay to the driver
+--   rep       percent more business reputation
+--   tipoff    percent lower tip-off chance on illegal runs
+--   heatDecay percent faster heat decay
+--   heatGain  percent less heat per illegal run
+Config.Skills = {
+    respecCost = 5000,
+
+    branches = {
+        {
+            id = 'longhaul', label = 'Long Haul', colour = '#38d9ff',
+            skills = {
+                { id = 'lh_miles', label = 'Mile Muncher', ranks = 3,
+                  description = 'More pay on loads of 6 km and over.',
+                  effects = { { stat = 'pay', value = 3, when = { minKm = 6 } } } },
+                { id = 'lh_night', label = 'Night Shift', ranks = 1, requires = { 'lh_miles' },
+                  description = 'More pay on loads taken between 21:00 and 05:00.',
+                  effects = { { stat = 'pay', value = 8, when = { night = true } } } },
+                { id = 'lh_pedal', label = 'Pedal Down', ranks = 2, requires = { 'lh_miles' },
+                  description = 'More time on timed loads.',
+                  effects = { { stat = 'timer', value = 10 } } },
+                { id = 'lh_scholar', label = 'Road Scholar', ranks = 2, requires = { 'lh_night' },
+                  description = 'More XP from every load.',
+                  effects = { { stat = 'xp', value = 5 } } },
+                { id = 'lh_king', label = 'King of the Road', ranks = 1, requires = { 'lh_scholar', 'lh_pedal' },
+                  description = 'A big bonus on loads of 12 km and over.',
+                  effects = { { stat = 'pay', value = 10, when = { minKm = 12 } } } },
+            },
+        },
+        {
+            id = 'precision', label = 'Precision', colour = '#3fe08f',
+            skills = {
+                { id = 'pr_smooth', label = 'Smooth Operator', ranks = 2,
+                  description = 'Lose less rating to damage.',
+                  effects = { { stat = 'rating', value = 15 } } },
+                { id = 'pr_dock', label = 'Dock Master', ranks = 2, requires = { 'pr_smooth' },
+                  description = 'A bonus for backing the trailer neatly into the drop point.',
+                  effects = { { stat = 'dock', value = 4 } } },
+                { id = 'pr_care', label = 'Mechanical Sympathy', ranks = 2,
+                  description = 'Parts wear slower on your own trucks.',
+                  effects = { { stat = 'wear', value = 12 } } },
+                { id = 'pr_perfect', label = 'Perfect Record', ranks = 1, requires = { 'pr_dock', 'pr_care' },
+                  description = 'More pay on every load while your rating is 90 or better.',
+                  effects = { { stat = 'pay', value = 6, when = { minRating = 90 } } } },
+            },
+        },
+        {
+            id = 'heavy', label = 'Heavy Haul', colour = '#ffb547',
+            skills = {
+                { id = 'hh_lifter', label = 'Heavy Lifter', ranks = 3,
+                  description = 'More pay on loads of 20 tonnes and over.',
+                  effects = { { stat = 'pay', value = 4, when = { minWeight = 20 } } } },
+                { id = 'hh_convoy', label = 'Convoy Captain', ranks = 2, requires = { 'hh_lifter' },
+                  description = 'A bigger convoy bonus.',
+                  effects = { { stat = 'convoy', value = 5 } } },
+                { id = 'hh_pilot', label = 'Pilot Car Pro', ranks = 2,
+                  description = 'More pay when you escort an oversize load.',
+                  effects = { { stat = 'escort', value = 10 } } },
+                { id = 'hh_titan', label = 'Titan', ranks = 1, requires = { 'hh_convoy' },
+                  description = 'A big bonus on heavy haul loads.',
+                  effects = { { stat = 'pay', value = 10, when = { types = { 'heavy' } } } } },
+            },
+        },
+        {
+            id = 'business', label = 'Business', colour = '#8f7dff',
+            skills = {
+                { id = 'bz_negotiator', label = 'Negotiator', ranks = 3,
+                  description = 'Keep more of the pay when you drive a business truck.',
+                  effects = { { stat = 'cut', value = 3 } } },
+                { id = 'bz_mechanic', label = 'Fleet Mechanic', ranks = 2,
+                  description = 'Cheaper repairs and services.',
+                  effects = { { stat = 'repair', value = 10 } } },
+                { id = 'bz_tuner', label = 'Tuner', ranks = 2, requires = { 'bz_mechanic' },
+                  description = 'Cheaper upgrades.',
+                  effects = { { stat = 'upgrade', value = 8 } } },
+                { id = 'bz_ambassador', label = 'Brand Ambassador', ranks = 2,
+                  description = 'Your loads earn your business more reputation.',
+                  effects = { { stat = 'rep', value = 10 } } },
+                { id = 'bz_tycoon', label = 'Tycoon', ranks = 1, requires = { 'bz_negotiator', 'bz_ambassador' },
+                  description = 'More pay on every load hauled with a business truck.',
+                  effects = { { stat = 'pay', value = 5, when = { business = true } } } },
+            },
+        },
+        {
+            id = 'smuggler', label = 'Smuggler', colour = '#ff5d6c',
+            skills = {
+                { id = 'sm_low', label = 'Low Profile', ranks = 3,
+                  description = 'Illegal runs are less likely to be reported.',
+                  effects = { { stat = 'tipoff', value = 10 } } },
+                { id = 'sm_cool', label = 'Cool Head', ranks = 2,
+                  description = 'Heat fades faster.',
+                  effects = { { stat = 'heatDecay', value = 25 } } },
+                { id = 'sm_connections', label = 'Connections', ranks = 2, requires = { 'sm_low' },
+                  description = 'Illegal runs pay more.',
+                  effects = { { stat = 'pay', value = 8, when = { illegal = true } } } },
+                { id = 'sm_ghost', label = 'Ghost', ranks = 1, requires = { 'sm_connections', 'sm_cool' },
+                  description = 'Much less heat per run, and even fewer tip-offs.',
+                  effects = { { stat = 'heatGain', value = 50 }, { stat = 'tipoff', value = 15 } } },
+            },
+        },
+    },
+}
+
+-- ── Pay ────────────────────────────────────────────────────────────────────
+Config.Pay = {
+    -- The route builder suggests pay from the route's length: base plus
+    -- perKm for every kilometre, times the trailer type's multiplier.
+    suggest = {
+        base = 150,
+        perKm = 110,
+        xpPerKm = 14,
+        types = { dryvan = 1.0, reefer = 1.2, flatbed = 1.25, logs = 1.25, carhauler = 1.4, tanker = 1.6, container = 1.1, heavy = 1.9 },
+    },
+
+    -- Two stops or more.
+    multiStopBonus = 25,
+
+    -- Driving rating: a running average of how clean each run was.
+    rating = {
+        damagePerPoint = 20,   -- body and engine damage per rating point lost on a run
+        bonusAt = 90, bonus = 5,
+        penaltyAt = 50, penalty = 5,
+    },
+
+    -- Hot loads: a few routes at a time pay a bonus, swapped every rotateMinutes.
+    hot = { enabled = true, count = 2, rotateMinutes = 30, bonus = 50 },
+
+    -- A clean reverse into the drop point (Dock Master) is judged on how
+    -- close the trailer is to the point and how straight it sits.
+    dock = { maxDistance = 3.0, maxAngle = 12.0 },
+}
+
+-- ── Co-op ──────────────────────────────────────────────────────────────────
+Config.Coop = {
+    -- Convoys: several trucks take one route together. Everyone hauls their
+    -- own trailer and gets bonusPerTruck percent for every other truck, as
+    -- long as they all deliver within windowMinutes of the first.
+    convoy = { enabled = true, maxTrucks = 4, bonusPerTruck = 10, maxBonus = 30, windowMinutes = 3 },
+
+    -- Escorts: routes marked for an escort need a player in a pilot car
+    -- close to the load for most of the trip. The escort is paid cut percent
+    -- of the load on top, the driver loses nothing.
+    escort = {
+        enabled = true,
+        vehicle = 'sadler',     -- the pilot car handed out; escorts can also bring their own
+        cut = 25,
+        range = 150.0,          -- metres from the load
+        presence = 70,          -- percent of the trip they have to be in range
+    },
+
+    -- Co-drivers ride in the cab and are paid cut percent of the load on top.
+    codriver = { enabled = true, cut = 35, xp = 60 },
+}
+
+-- ── Illegal runs ───────────────────────────────────────────────────────────
+Config.Illegal = {
     enabled = true,
-    activeCount = 2,
-    rotateMinutes = 30,
-    payoutBonusPct = 50,
-    pool = {
-        {
-            id = 'hot_general_01',
-            label = 'Rush Freight — Vinewood',
-            cargoType = 'general',
-            minLevel = 1,
-            destination = vec4(457.0935, 224.7394, 103.3604, 339.5320),
-            payout = 450,
-            xp = 60,
-        },
-        {
-            id = 'hot_reefer_01',
-            label = 'Rush Refrigerated — Movie Set',
-            cargoType = 'refrigerated',
-            minLevel = 2,
-            requiredTrailerType = 'refrigerated',
-            spoilTimeSeconds = 420,
-            destination = vec4(-1025.7351, -516.4412, 36.4587, 25.0652),
-            payout = 750,
-            xp = 90,
-        },
-        {
-            id = 'hot_construction_01',
-            label = 'Rush Materials — Docks',
-            cargoType = 'construction',
-            minLevel = 3,
-            requiredTrailerType = 'construction',
-            destination = vec4(-509.84, -2852.44, 5.24, 45.51),
-            payout = 1000,
-            xp = 120,
-        },
+    level = 5,                 -- level needed before illegal loads show up
+
+    -- Chance, in percent, that someone reports the run to the police. Heat
+    -- adds heatChance percent for every point of heat the driver has.
+    tipChance = 20,
+    heatChance = 0.5,
+    maxChance = 90,
+
+    heatPerRun = 20,
+    maxHeat = 100,
+    blockAt = 100,             -- heat at which a driver cannot take illegal loads
+    decayPerHour = 10,
+
+    -- Paid in cash by default. Set item to e.g. 'black_money' to pay an item
+    -- instead, through the inventory bridge.
+    payout = { account = 'cash', item = false },
+
+    policeJobs = { 'police', 'sheriff', 'bcso', 'sasp', 'lspd', 'state' },
+    alert = {
+        code = '10-66',
+        title = 'Suspicious Cargo',
+        description = 'A caller reports a truck hauling what looks like smuggled cargo.',
+        sprite = 477,
+        colour = 1,
+        seconds = 300,
     },
 }
 
--- ─────────────────────────────────────────────────────────────
--- Levels
--- Personal driver progression — xp accumulates from completed deliveries,
--- level gates which contracts show up on the board (Config.Trucking.Contracts'
--- minLevel field). Same shape/lookup convention as other XS scripts'
--- task-rank systems.
--- ─────────────────────────────────────────────────────────────
-Config.TruckingLevels = {
-    { level = 1, xpNeeded = 0,    title = 'Rookie Hauler' },
-    { level = 2, xpNeeded = 150,  title = 'Regional Driver' },
-    { level = 3, xpNeeded = 400,  title = 'Long-Haul Trucker' },
-    { level = 4, xpNeeded = 800,  title = 'Owner-Operator' },
-    { level = 5, xpNeeded = 1500, title = 'Master Trucker' },
-}
-
--- ─────────────────────────────────────────────────────────────
--- Companies
--- Player-founded (NOT admin-seeded like XS-CriminalTablet's gangs — a trucking company
--- is a legit business, "start your own" is the whole point). Pay
--- foundingCost at the depot to found one and become its Owner. Ranks/
--- permissions/treasury/reputation all follow the exact same pattern as
--- XS-CriminalTablet's gang system (server/company.lua), just renamed.
--- ─────────────────────────────────────────────────────────────
-Config.Trucking.Company = {
+-- ── Businesses ─────────────────────────────────────────────────────────────
+Config.Business = {
+    enabled = true,
     foundingCost = 25000,
-    account = 'bank', -- money account foundingCost/deposits/withdrawals use
+    nameLength = { 3, 32 },
 
-    -- Permission keys checked throughout server/company.lua.
-    Permissions = {
-        'invite',           -- invite new members
-        'kick',             -- remove members
-        'promote',          -- change member ranks
-        'manage_treasury',  -- withdraw company funds (deposit needs no permission)
-        'manage_vehicles',  -- buy/repair/dispatch company trucks & trailers
-        'manage_perks',     -- spend the company's perk points
+    -- Logos are pictures from these hosts only, over https.
+    logoHosts = { 'imgur.com', 'fivemanage.com' },
+
+    -- Members and business trucks allowed, and what buying more costs.
+    members = { base = 6, upgrades = { { add = 4, cost = 15000 }, { add = 6, cost = 40000 }, { add = 10, cost = 90000 } } },
+    fleet = { base = 3, upgrades = { { add = 3, cost = 20000 }, { add = 5, cost = 60000 }, { add = 8, cost = 120000 } } },
+
+    -- What each permission lets a rank do.
+    permissions = {
+        invite = 'Invite players',
+        kick = 'Remove members',
+        promote = 'Change member ranks',
+        ranks = 'Edit ranks and pay',
+        bank = 'Withdraw from the bank',
+        fleet = 'Buy, sell and look after trucks',
+        perks = 'Spend perk points and buy upgrades',
+        settings = 'Change the name, logo and colours',
     },
 
-    -- Default rank ladder applied when a company is founded. Owners can
-    -- rename ranks later; this is just the starting template. Higher grade
-    -- = more authority. Grade 0 is the entry rank. The founder starts at
-    -- the top grade and can never be kicked/demoted (same boss-immunity
-    -- rule as XS-CriminalTablet's gangs).
-    DefaultRanks = {
-        [0] = { name = 'Employee', permissions = {} },
-        [1] = { name = 'Manager',  permissions = { 'invite', 'manage_vehicles' } },
-        [2] = { name = 'Owner',    permissions = '*' },
+    -- The ranks a new business starts with. `cut` is the percent of a load's
+    -- pay the driver keeps when they haul with a business truck; the rest
+    -- goes to the business bank. Loads on your own truck pay you in full.
+    ranks = {
+        { name = 'Driver',     cut = 60, permissions = {} },
+        { name = 'Dispatcher', cut = 70, permissions = { 'invite', 'fleet' } },
+        { name = 'Manager',    cut = 75, permissions = { 'invite', 'kick', 'promote', 'fleet', 'perks' } },
+        { name = 'Owner',      cut = 85, permissions = '*' },
     },
+    maxRanks = 8,
 
-    -- Cut of a contract's payout that goes to the driver personally when
-    -- they deliver using a COMPANY-owned truck; the remainder goes to the
-    -- company treasury. Payouts from personally-owned trucks are unaffected
-    -- (100% to the driver, as already built). Passive-dispatch payouts (no
-    -- driver involved) always go 100% to whoever owns the truck.
-    driverCutPct = 30,
-
-    -- Passive/idle dispatch: an owned truck not currently selected/in-use
-    -- can be sent to autonomously run a contract for real time instead of
-    -- being driven. Pays passiveDispatchPayoutPct of the contract's normal
-    -- payout once collected — less than driving it yourself, since nobody's
-    -- actually doing the work. Computed lazily from a stored ready-at
-    -- timestamp (no server timer needed, survives restarts for free).
-    passiveDispatchPayoutPct = 50,
-    passiveDispatchMinutes = 20, -- how long a dispatched truck is "out" before it's ready to collect
-    maxConcurrentDispatches = 3, -- per player/company, so this can't be stacked indefinitely
-
-    -- Company reputation tiers/titles — same shape/lookup as Config.TruckingLevels,
-    -- but for the company as a whole. Earned from completed company-truck
-    -- deliveries and collected dispatches. perkPoints awarded once, the
-    -- moment the company crosses into that level (same as XS-CriminalTablet's
-    -- Config.GangLevels).
-    Levels = {
-        { level = 1, repNeeded = 0,    title = 'Startup Carrier',   perkPoints = 0 },
-        { level = 2, repNeeded = 500,  title = 'Regional Carrier',  perkPoints = 1 },
-        { level = 3, repNeeded = 1500, title = 'National Freight',  perkPoints = 1 },
-        { level = 4, repNeeded = 3500, title = 'Logistics Group',   perkPoints = 2 },
-        { level = 5, repNeeded = 7000, title = 'Freight Empire',    perkPoints = 2 },
+    -- Reputation levels. Each new level gives perk points.
+    levels = {
+        { level = 1, rep = 0,     title = 'Startup Carrier',  points = 0 },
+        { level = 2, rep = 500,   title = 'Local Carrier',    points = 1 },
+        { level = 3, rep = 1500,  title = 'Regional Carrier', points = 1 },
+        { level = 4, rep = 3500,  title = 'National Freight', points = 2 },
+        { level = 5, rep = 7000,  title = 'Logistics Group',  points = 2 },
+        { level = 6, rep = 12000, title = 'Freight Empire',   points = 3 },
     },
+    repPerLoad = 15,
 
-    ledgerLimit = 25, -- recent transactions kept on the Treasury tab
-    leaderboardLimit = 10, -- top companies shown on the Leaderboard tab's Companies view
-
-    -- ─────────────────────────────────────────────────────────────
-    -- Perk tree
-    -- Permanent, company-wide modifiers bought with perk_points (never
-    -- consumed, no inventory items). Three branches, each a chain of tiers —
-    -- tier N requires tier N-1 in that SAME branch already owned, exactly
-    -- like XS-CriminalTablet's Config.GangPerks (vault_1 -> vault_2 -> vault_3).
-    -- Gated by the 'manage_perks' permission (add it to a rank's permission
-    -- list to allow buying perks from that rank — Owner has it by default
-    -- via '*').
-    --   fleet:      maxDispatchBonus (+N concurrent dispatch slots)
-    --   logistics:  dispatchTimeReductionPct (-N% passive dispatch duration),
-    --               driverCutBonusPct (+N% driver cut on company-truck jobs)
-    --   treasury:   depositBonusPct (+N% added to every treasury deposit)
-    -- ─────────────────────────────────────────────────────────────
-    PerkTree = {
-        fleet = {
-            label = 'Fleet',
+    -- Perks, bought with perk points. Each tier needs the one before it.
+    perks = {
+        {
+            id = 'fleet', label = 'Fleet',
             tiers = {
-                { id = 'fleet_1', label = 'Extra Bay', description = '+1 concurrent dispatch slot',
-                  cost = 1, maxDispatchBonus = 1 },
-                { id = 'fleet_2', label = 'Expanded Yard', description = '+2 more concurrent dispatch slots',
-                  cost = 2, maxDispatchBonus = 2 },
+                { id = 'fleet_1', label = 'Extra Bay',     cost = 1, description = 'Send one more truck out on fleet runs.', runs = 1 },
+                { id = 'fleet_2', label = 'Big Yard',      cost = 2, description = 'Send two more trucks out on fleet runs.', runs = 2 },
+                { id = 'fleet_3', label = 'Service Deal',  cost = 2, description = 'Business trucks cost 15% less to repair.', repair = 15 },
             },
         },
-        logistics = {
-            label = 'Logistics',
+        {
+            id = 'logistics', label = 'Logistics',
             tiers = {
-                { id = 'logistics_1', label = 'Route Planning', description = '-15% passive dispatch time',
-                  cost = 1, dispatchTimeReductionPct = 15 },
-                { id = 'logistics_2', label = 'Preferred Contracts', description = '+10% driver cut on company-truck deliveries',
-                  cost = 2, driverCutBonusPct = 10 },
+                { id = 'logistics_1', label = 'Route Planning', cost = 1, description = 'Fleet runs finish 15% sooner.', runTime = 15 },
+                { id = 'logistics_2', label = 'Better Rates',   cost = 2, description = 'Every member earns 5% more on business trucks.', pay = 5 },
+                { id = 'logistics_3', label = 'Priority Freight', cost = 3, description = 'Every member earns another 5%.', pay = 5 },
             },
         },
-        treasury = {
-            label = 'Treasury',
+        {
+            id = 'treasury', label = 'Treasury',
             tiers = {
-                { id = 'treasury_1', label = 'Smart Banking', description = '+5% on every treasury deposit',
-                  cost = 1, depositBonusPct = 5 },
-                { id = 'treasury_2', label = 'Investment Fund', description = '+10% more on every treasury deposit',
-                  cost = 2, depositBonusPct = 10 },
+                { id = 'treasury_1', label = 'Smart Banking',   cost = 1, description = 'Deposits get 5% added.', deposit = 5 },
+                { id = 'treasury_2', label = 'Investment Fund', cost = 2, description = 'Deposits get another 10%.', deposit = 10 },
+            },
+        },
+        {
+            id = 'brand', label = 'Brand',
+            tiers = {
+                { id = 'brand_1', label = 'Known Name',   cost = 1, description = '20% more reputation from every load.', rep = 20 },
+                { id = 'brand_2', label = 'Trusted Name', cost = 2, description = 'Another 20% reputation.', rep = 20 },
             },
         },
     },
 
-    -- Computed live from xs_trucking_companies every time the Company
-    -- tab is requested — no separate "earned" tracking table, same pattern
-    -- as the personal achievements above. type = 'total_deliveries' | 'level' | 'reputation' | 'bank'.
-    Achievements = {
-        { id = 'first_company_delivery', label = 'First Company Delivery', description = 'Complete 1 delivery with a company truck or dispatch', type = 'total_deliveries', value = 1 },
-        { id = 'established_carrier',    label = 'Established Carrier',    description = 'Complete 25 company deliveries',                          type = 'total_deliveries', value = 25 },
-        { id = 'freight_empire',         label = 'Freight Empire',         description = 'Reach the max company rank',                              type = 'level', value = 5 },
-        { id = 'deep_pockets',           label = 'Deep Pockets',           description = 'Reach a $100,000 treasury balance',                        type = 'bank', value = 100000 },
+    -- Fleet runs: an idle truck is sent to haul a route on its own. It pays
+    -- payPercent of the route and is back after minutes.
+    runs = { enabled = true, payPercent = 50, minutes = 20, max = 3 },
+
+    ledgerLimit = 60,
+}
+
+-- ── Leaderboards ───────────────────────────────────────────────────────────
+Config.Leaderboards = {
+    limit = 15,
+}
+
+-- ── The default trucking spot ──────────────────────────────────────────────
+-- Created once, the first time the resource starts with no spots in the
+-- database. Edit it, or add more, in /truckingbuilder.
+Config.DefaultSpot = {
+    name = 'Port of Los Santos',
+    blip = { sprite = 477, colour = 5, scale = 0.8 },
+    -- The laptop sits on a computer already in the map, so no prop is spawned.
+    laptop = { x = 1209.09, y = -3114.97, z = 5.61, h = 75.18, prop = false },
+    truckBays = {
+        { x = 1244.4124, y = -3135.5105, z = 5.8264, h = 270.9522 },
+        { x = 1243.7046, y = -3142.3057, z = 5.8056, h = 271.0386 },
+        { x = 1244.1990, y = -3149.2036, z = 5.8209, h = 270.3443 },
+        { x = 1244.2622, y = -3155.7896, z = 5.8229, h = 270.6933 },
     },
+    trailerBays = {
+        { x = 1273.9138, y = -3160.4355, z = 6.1377, h = 90.7130 },
+        { x = 1273.3838, y = -3168.9919, z = 6.1392, h = 90.3086 },
+        { x = 1272.8040, y = -3174.9897, z = 6.1591, h = 89.2655 },
+        { x = 1272.3174, y = -3184.5920, z = 6.1424, h = 86.1031 },
+    },
+    returns = {},
+}
+
+-- Routes created with the default spot.
+Config.DefaultRoutes = {
+    { label = 'General Freight', cargo = 'Consumer goods', type = 'dryvan', weight = 12, pay = 350, xp = 40, level = 1,
+      stops = { { x = -509.84, y = -2852.44, z = 5.24, h = 45.51 } } },
+    { label = 'Airport Cargo', cargo = 'Air freight', type = 'dryvan', weight = 10, pay = 400, xp = 45, level = 1,
+      stops = { { x = -979.5997, y = -2865.0774, z = 14.1832, h = 59.9426 } } },
+    { label = 'Regional Multi-Drop', cargo = 'Mixed freight', type = 'dryvan', weight = 14, pay = 500, xp = 90, level = 3,
+      stops = { { x = -509.84, y = -2852.44, z = 5.24, h = 45.51 }, { x = -979.5997, y = -2865.0774, z = 14.1832, h = 59.9426 } } },
+    { label = 'Studio Catering', cargo = 'Chilled food', type = 'reefer', weight = 14, pay = 650, xp = 70, level = 2, timer = 480,
+      stops = { { x = -1025.7351, y = -516.4412, z = 36.4587, h = 25.0652 } } },
+    { label = 'Vinewood Build', cargo = 'Steel beams', type = 'flatbed', weight = 22, pay = 900, xp = 100, level = 4,
+      convoy = { min = 1, max = 3 },
+      stops = { { x = 457.0935, y = 224.7394, z = 103.3604, h = 339.5320 } } },
+    { label = 'Hillside Transformer', cargo = 'Power transformer', type = 'heavy', weight = 62, pay = 2600, xp = 260, level = 16,
+      escorts = 1,
+      stops = { { x = 457.0935, y = 224.7394, z = 103.3604, h = 339.5320 } } },
+    { label = 'No Questions Asked', cargo = 'Sealed container', type = 'container', weight = 18, pay = 1800, xp = 120, level = 5,
+      illegal = true,
+      pickup = { x = -509.84, y = -2852.44, z = 5.24, h = 45.51 },
+      stops = { { x = -979.5997, y = -2865.0774, z = 14.1832, h = 59.9426 } } },
 }

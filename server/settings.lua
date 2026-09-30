@@ -1,152 +1,78 @@
--- ─────────────────────────────────────────────────────────────
--- Live settings
--- An override layer sitting on top of config.lua. Admins retune the
--- economy from the in-game panel and it persists — no file edit, no
--- restart, no dropping players mid-shift to change a payout.
---
--- The important property is that this is an OVERRIDE, not a replacement.
--- A key only exists in the database once someone has actually changed it;
--- everything else keeps reading config.lua. That means a server owner can
--- still edit the config file normally for anything they haven't touched
--- in-panel, and "Reset" genuinely restores config control rather than
--- writing the current value back as a new hardcoded one.
---
--- Same structure as cipher-drugs' server/settings.lua + stock.lua override
--- layers. Read through the global SGet(key, fallback).
--- ─────────────────────────────────────────────────────────────
 Settings = {}
 
 local cache = {}
-local loaded = false
 
--- The schema is the authority on what is tunable. Set() rejects anything
--- not listed here, so a malicious or malformed NUI payload can't write junk
--- keys into the table, and every knob is guaranteed to have a type and a
--- sane range for the UI to build a control from.
---
--- `path` is where the value comes from in Config when no override exists.
--- Resolved lazily so this table can be declared before Config is populated.
 local SCHEMA = {
-    -- ── Economy ──
-    { key = 'economy.payoutMult', label = 'Global payout multiplier', group = 'Economy',
-      type = 'number', min = 0, max = 500, suffix = '%', default = 100,
-      help = 'Scales every contract payout. 100 = unchanged.' },
-    { key = 'economy.xpMult', label = 'Global XP multiplier', group = 'Economy',
-      type = 'number', min = 0, max = 500, suffix = '%', default = 100 },
-    { key = 'economy.repairCostPerPoint', label = 'Repair cost per condition point', group = 'Economy',
-      type = 'number', min = 0, max = 500, prefix = '$', path = 'repairCostPerPoint' },
-    { key = 'economy.paintCost', label = 'Paint job cost', group = 'Economy',
-      type = 'number', min = 0, max = 100000, prefix = '$', path = 'paintCost' },
+    { key = 'economy.payoutMult', label = 'Pay multiplier', group = 'Economy', type = 'number', min = 0, max = 500, suffix = '%', default = 100,
+      help = 'Scales the pay of every load.' },
+    { key = 'economy.xpMult', label = 'XP multiplier', group = 'Economy', type = 'number', min = 0, max = 500, suffix = '%', default = 100 },
+    { key = 'economy.fuelPrice', label = 'Depot fuel, per percent', group = 'Economy', type = 'number', min = 0, max = 1000, prefix = '$', path = 'DepotFuelPrice' },
+    { key = 'economy.bodyCost', label = 'Body repair, per point', group = 'Economy', type = 'number', min = 0, max = 1000, prefix = '$', path = 'Parts.bodyCostPerPoint' },
+    { key = 'economy.cancelFee', label = 'Fee for dropping a load', group = 'Economy', type = 'number', min = 0, max = 100000, prefix = '$', path = 'Job.cancelFee' },
 
-    -- ── Bonuses ──
-    { key = 'bonus.multiStopPct', label = 'Multi-stop bonus', group = 'Bonuses',
-      type = 'number', min = 0, max = 300, suffix = '%', path = 'multiStopBonusPct' },
-    { key = 'bonus.ratingBonusPct', label = 'High-rating bonus', group = 'Bonuses',
-      type = 'number', min = 0, max = 100, suffix = '%', path = 'ratingBonusPct' },
-    { key = 'bonus.ratingPenaltyPct', label = 'Low-rating penalty', group = 'Bonuses',
-      type = 'number', min = 0, max = 100, suffix = '%', path = 'ratingPenaltyPct' },
-    { key = 'bonus.ratingBonusThreshold', label = 'Rating needed for bonus', group = 'Bonuses',
-      type = 'number', min = 0, max = 100, path = 'ratingBonusThreshold' },
-    { key = 'bonus.ratingPenaltyThreshold', label = 'Rating that triggers penalty', group = 'Bonuses',
-      type = 'number', min = 0, max = 100, path = 'ratingPenaltyThreshold' },
+    { key = 'bonus.multiStop', label = 'Multi-stop bonus', group = 'Bonuses', type = 'number', min = 0, max = 300, suffix = '%', path = 'Pay.multiStopBonus' },
+    { key = 'bonus.ratingBonus', label = 'High-rating bonus', group = 'Bonuses', type = 'number', min = 0, max = 100, suffix = '%', path = 'Pay.rating.bonus' },
+    { key = 'bonus.ratingPenalty', label = 'Low-rating penalty', group = 'Bonuses', type = 'number', min = 0, max = 100, suffix = '%', path = 'Pay.rating.penalty' },
+    { key = 'bonus.latePay', label = 'Pay when a timed load is late', group = 'Bonuses', type = 'number', min = 0, max = 100, suffix = '%', path = 'Job.latePayPercent' },
 
-    -- ── Hot contracts ──
-    { key = 'hot.enabled', label = 'Hot contracts enabled', group = 'Hot Contracts', type = 'bool' },
-    { key = 'hot.payoutBonusPct', label = 'Hot contract bonus', group = 'Hot Contracts',
-      type = 'number', min = 0, max = 500, suffix = '%' },
-    { key = 'hot.rotateMinutes', label = 'Rotation interval', group = 'Hot Contracts',
-      type = 'number', min = 1, max = 720, suffix = ' min' },
-    { key = 'hot.activeCount', label = 'Hot contracts active at once', group = 'Hot Contracts',
-      type = 'number', min = 0, max = 10 },
+    { key = 'hot.enabled', label = 'Hot loads', group = 'Hot loads', type = 'bool', path = 'Pay.hot.enabled' },
+    { key = 'hot.bonus', label = 'Hot load bonus', group = 'Hot loads', type = 'number', min = 0, max = 500, suffix = '%', path = 'Pay.hot.bonus' },
+    { key = 'hot.rotateMinutes', label = 'Swap every', group = 'Hot loads', type = 'number', min = 1, max = 720, suffix = ' min', path = 'Pay.hot.rotateMinutes' },
+    { key = 'hot.count', label = 'Hot loads at once', group = 'Hot loads', type = 'number', min = 0, max = 10, path = 'Pay.hot.count' },
 
-    -- ── Vehicles ──
-    { key = 'vehicle.conditionLossRate', label = 'Condition loss per damage point', group = 'Vehicles',
-      type = 'number', min = 0, max = 5, step = 0.01, path = 'conditionLossRate' },
-    { key = 'vehicle.ratingDamageDivisor', label = 'Damage per rating point lost', group = 'Vehicles',
-      type = 'number', min = 1, max = 500, path = 'ratingDamageDivisor' },
+    { key = 'coop.convoyBonus', label = 'Convoy bonus per truck', group = 'Co-op', type = 'number', min = 0, max = 100, suffix = '%', path = 'Coop.convoy.bonusPerTruck' },
+    { key = 'coop.escortCut', label = 'Escort pay', group = 'Co-op', type = 'number', min = 0, max = 100, suffix = '%', path = 'Coop.escort.cut' },
+    { key = 'coop.codriverCut', label = 'Co-driver pay', group = 'Co-op', type = 'number', min = 0, max = 100, suffix = '%', path = 'Coop.codriver.cut' },
 
-    -- ── Dispatch ──
-    { key = 'dispatch.payoutPct', label = 'Passive dispatch payout', group = 'Dispatch',
-      type = 'number', min = 0, max = 200, suffix = '%' },
-    { key = 'dispatch.minutes', label = 'Dispatch run duration', group = 'Dispatch',
-      type = 'number', min = 1, max = 480, suffix = ' min' },
-    { key = 'dispatch.maxConcurrent', label = 'Max concurrent dispatches', group = 'Dispatch',
-      type = 'number', min = 0, max = 50 },
+    { key = 'illegal.enabled', label = 'Illegal runs', group = 'Illegal runs', type = 'bool', path = 'Illegal.enabled' },
+    { key = 'illegal.tipChance', label = 'Tip-off chance', group = 'Illegal runs', type = 'number', min = 0, max = 100, suffix = '%', path = 'Illegal.tipChance' },
+    { key = 'illegal.heatPerRun', label = 'Heat per run', group = 'Illegal runs', type = 'number', min = 0, max = 100, path = 'Illegal.heatPerRun' },
+    { key = 'illegal.decayPerHour', label = 'Heat lost per hour', group = 'Illegal runs', type = 'number', min = 0, max = 100, path = 'Illegal.decayPerHour' },
 
-    -- ── Companies ──
-    { key = 'company.foundingCost', label = 'Cost to found a company', group = 'Companies',
-      type = 'number', min = 0, max = 10000000, prefix = '$' },
-    { key = 'company.driverCutPct', label = 'Driver cut on company trucks', group = 'Companies',
-      type = 'number', min = 0, max = 100, suffix = '%' },
+    { key = 'business.foundingCost', label = 'Starting a business', group = 'Businesses', type = 'number', min = 0, max = 10000000, prefix = '$', path = 'Business.foundingCost' },
+    { key = 'business.runPay', label = 'Fleet run pay', group = 'Businesses', type = 'number', min = 0, max = 200, suffix = '%', path = 'Business.runs.payPercent' },
+    { key = 'business.runMinutes', label = 'Fleet run length', group = 'Businesses', type = 'number', min = 1, max = 480, suffix = ' min', path = 'Business.runs.minutes' },
 }
 
 local BY_KEY = {}
 for _, def in ipairs(SCHEMA) do BY_KEY[def.key] = def end
 
--- Config defaults, resolved at call time rather than baked into SCHEMA —
--- Config is a shared_script and may not be populated when this file's
--- top-level chunk runs.
-local function configDefault(key)
-    local T = Config.Trucking
-    local map = {
-        ['economy.payoutMult'] = 100,
-        ['economy.xpMult'] = 100,
-        ['economy.repairCostPerPoint'] = T.repairCostPerPoint,
-        ['economy.paintCost'] = T.paintCost,
-        ['bonus.multiStopPct'] = T.multiStopBonusPct,
-        ['bonus.ratingBonusPct'] = T.ratingBonusPct,
-        ['bonus.ratingPenaltyPct'] = T.ratingPenaltyPct,
-        ['bonus.ratingBonusThreshold'] = T.ratingBonusThreshold,
-        ['bonus.ratingPenaltyThreshold'] = T.ratingPenaltyThreshold,
-        ['hot.enabled'] = T.HotContracts and T.HotContracts.enabled,
-        ['hot.payoutBonusPct'] = T.HotContracts and T.HotContracts.payoutBonusPct,
-        ['hot.rotateMinutes'] = T.HotContracts and T.HotContracts.rotateMinutes,
-        ['hot.activeCount'] = T.HotContracts and T.HotContracts.activeCount,
-        ['vehicle.conditionLossRate'] = T.conditionLossRate,
-        ['vehicle.ratingDamageDivisor'] = T.ratingDamageDivisor,
-        ['dispatch.payoutPct'] = T.Company and T.Company.passiveDispatchPayoutPct,
-        ['dispatch.minutes'] = T.Company and T.Company.passiveDispatchMinutes,
-        ['dispatch.maxConcurrent'] = T.Company and T.Company.maxConcurrentDispatches,
-        ['company.foundingCost'] = T.Company and T.Company.foundingCost,
-        ['company.driverCutPct'] = T.Company and T.Company.driverCutPct,
-    }
-    return map[key]
+local function fromConfig(def)
+    if not def.path then return def.default end
+    local node = Config
+    for part in def.path:gmatch('[^%.]+') do
+        if type(node) ~= 'table' then return def.default end
+        node = node[part]
+    end
+    if node == nil then return def.default end
+    return node
 end
 
--- Values round-trip through TEXT, so booleans and numbers both come back as
--- strings and have to be coerced against the schema's declared type.
 local function coerce(def, raw)
-    if def.type == 'bool' then
-        return raw == true or raw == 'true' or raw == 1 or raw == '1'
-    end
+    if def.type == 'bool' then return raw == true or raw == 'true' or raw == 1 or raw == '1' end
     return tonumber(raw)
 end
 
 function Settings.Load()
-    if not WaitForDB() then return end
-
     local rows = MySQL.query.await('SELECT `key`, `value` FROM xs_trucking_settings') or {}
     cache = {}
-    for _, r in ipairs(rows) do
-        local def = BY_KEY[r.key]
-        -- Silently drop rows for keys no longer in the schema, so removing a
-        -- knob in a future version doesn't resurrect a dead override.
-        if def then cache[r.key] = coerce(def, r.value) end
+    for _, row in ipairs(rows) do
+        local def = BY_KEY[row.key]
+        if def then cache[row.key] = coerce(def, row.value) end
     end
-    loaded = true
 end
 
-function Settings.Get(key, fallback)
+function Settings.Get(key)
     if cache[key] ~= nil then return cache[key] end
-    local d = configDefault(key)
-    if d ~= nil then return d end
-    return fallback
+    local def = BY_KEY[key]
+    if not def then return nil end
+    return fromConfig(def)
 end
 
--- Global shorthand — this gets read at a lot of call sites and
--- `Settings.Get` at every one of them buries the actual logic.
 function SGet(key, fallback)
-    return Settings.Get(key, fallback)
+    local value = Settings.Get(key)
+    if value == nil then return fallback end
+    return value
 end
 
 function Settings.Set(key, value)
@@ -156,19 +82,16 @@ function Settings.Set(key, value)
     local coerced = coerce(def, value)
     if def.type == 'number' then
         if not coerced then return false, 'Not a number.' end
-        if def.min and coerced < def.min then return false, ('Minimum is %s.'):format(def.min) end
-        if def.max and coerced > def.max then return false, ('Maximum is %s.'):format(def.max) end
+        if def.min and coerced < def.min then return false, ('The lowest is %s.'):format(def.min) end
+        if def.max and coerced > def.max then return false, ('The highest is %s.'):format(def.max) end
     end
 
     cache[key] = coerced
-    MySQL.query.await(
-        'INSERT INTO xs_trucking_settings (`key`, `value`) VALUES (?, ?) ON DUPLICATE KEY UPDATE `value` = VALUES(`value`)',
+    MySQL.query.await('INSERT INTO xs_trucking_settings (`key`, `value`) VALUES (?, ?) ON DUPLICATE KEY UPDATE `value` = VALUES(`value`)',
         { key, tostring(coerced) })
     return true
 end
 
--- Deleting the row (rather than writing the config value back into it) is
--- what makes this a genuine reset — the key returns to tracking config.lua.
 function Settings.Reset(key)
     if not BY_KEY[key] then return false, 'Unknown setting.' end
     cache[key] = nil
@@ -176,16 +99,7 @@ function Settings.Reset(key)
     return true
 end
 
-function Settings.ResetAll()
-    cache = {}
-    MySQL.query.await('DELETE FROM xs_trucking_settings')
-    return true
-end
-
--- Shaped for the admin Control tab: grouped, each entry carrying its
--- current value, the config default it would fall back to, and whether it's
--- currently overridden (so the UI can badge it).
-function Settings.AdminList()
+function Settings.List()
     local groups, order = {}, {}
 
     for _, def in ipairs(SCHEMA) do
@@ -194,31 +108,15 @@ function Settings.AdminList()
             order[#order + 1] = def.group
         end
 
-        local d = configDefault(def.key)
-        if d == nil then d = def.default end
-
-        groups[def.group][#groups[def.group] + 1] = {
-            key = def.key, label = def.label, type = def.type,
-            min = def.min, max = def.max, step = def.step,
+        local list = groups[def.group]
+        list[#list + 1] = {
+            key = def.key, label = def.label, type = def.type, min = def.min, max = def.max,
             prefix = def.prefix, suffix = def.suffix, help = def.help,
-            value = Settings.Get(def.key),
-            default = d,
-            overridden = cache[def.key] ~= nil,
+            value = Settings.Get(def.key), default = fromConfig(def), changed = cache[def.key] ~= nil,
         }
     end
 
     local out = {}
-    for i, name in ipairs(order) do
-        out[i] = { group = name, items = groups[name] }
-    end
+    for i, name in ipairs(order) do out[i] = { group = name, items = groups[name] } end
     return out
 end
-
-CreateThread(function()
-    Settings.Load()
-    if Config.Debug and loaded then
-        local n = 0
-        for _ in pairs(cache) do n = n + 1 end
-        print(('^2[XS-Trucking]^0 settings loaded — %d override(s) active'):format(n))
-    end
-end)
