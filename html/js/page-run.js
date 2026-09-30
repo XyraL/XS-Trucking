@@ -124,7 +124,8 @@ XS.Pages.run = (() => {
     }
 
     function pointsFor(ctx, run) {
-        const start = run.origin || (run.stage === 'hookup' && run.target) || ctx.board.spot.laptop;
+        const load = (ctx.board.loads || []).find((l) => l.id === run.routeId);
+        const start = (load && load.origin) || run.origin || (run.stage === 'hookup' && run.target) || ctx.board.spot.laptop;
         return [start, ...run.stops];
     }
 
@@ -214,7 +215,7 @@ XS.Pages.run = (() => {
 
         tilt = XS.Tilt.create(el.querySelector('.tiltbox'));
         tilt.show(mapRoute(ctx, run), 1);
-        XS.Paths.want([{ points: pointsFor(ctx, run) }]);
+        XS.Paths.want([{ points: pointsFor(ctx, run), label: run.label }]);
         paintLive();
         live(XS.Hud.last());
         if (run.crew || run.role === 'driver') poll = setInterval(refreshRun, 4000);

@@ -189,7 +189,7 @@ XS.Builder = (() => {
             const points = routePoints();
             const known = points && XS.Paths.get(points);
             map.line(known ? known.line : [origin, ...draft.stops], draft.illegal ? '#ff5d6c' : '#38d9ff', false);
-            if (points) XS.Paths.want([{ points, route: draft.id, spot: spot && spot.id, report: !!draft.id && !dirty }]);
+            if (points) XS.Paths.want([{ points, route: draft.id, spot: spot && spot.id, report: !!draft.id && !dirty, label: draft.label }]);
             draft.stops.forEach((p, i) => { map.marker(p, '#8f7dff', `Drop ${i + 1}`, 16); all.push(p); });
         }
         map.fit(all.length ? all : [player]);

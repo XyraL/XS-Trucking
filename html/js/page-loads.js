@@ -247,7 +247,7 @@ XS.Pages.loads = (() => {
 
     function wantPaths(ctx) {
         XS.Paths.want((ctx.board.loads || []).map((l) => ({
-            points: pointsFor(ctx, l), route: l.id, spot: ctx.board.spot.id, report: !!ctx.board.admin && !l.road,
+            points: pointsFor(ctx, l), route: l.id, spot: ctx.board.spot.id, report: !!ctx.board.admin && !l.road, label: l.label,
         })));
     }
 

@@ -32,7 +32,7 @@ XS.Paths = (() => {
             if (tag && cache.get(k)) reported.add(tag);
             pending.add(k);
             ask.push({
-                key: k, route: r.route, spot: r.spot, report: !!r.report,
+                key: k, route: r.route, spot: r.spot, report: !!r.report, label: r.label,
                 points: r.points.map((p) => ({ x: p.x, y: p.y, z: p.z })),
             });
         }
