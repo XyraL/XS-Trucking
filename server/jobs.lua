@@ -118,8 +118,7 @@ end
 
 local function publicLoad(route, spot, profile, cid)
     local origin = Spots.Origin(spot, route)
-    local road = Spots.RoadMeters(route, spot.id)
-    local km = (road or Util.RouteLength(route, origin)) / 1000
+    local km = Util.RouteLength(route, origin) / 1000
     local kind = Util.TrailerType(route.type)
     local cert = certFor(route)
     local certDef = cert and Util.Certificate(cert)
@@ -151,7 +150,6 @@ local function publicLoad(route, spot, profile, cid)
         stops = stops,
         origin = origin and { x = origin.x, y = origin.y, z = origin.z } or nil,
         remotePickup = route.pickup ~= nil,
-        road = road ~= nil,
         locked = lockReason(route, profile, cid),
     }
 end
@@ -188,7 +186,6 @@ function Jobs.Board(src, spotId)
         business = Business.Public(Business.ByCitizen(cid)),
         crews = Coop and Coop.ForSpot(spot.id, src) or {},
         me = src,
-        admin = Framework.IsAdmin(src) == true,
         coop = {
             convoyBonus = SGet('coop.convoyBonus', Config.Coop.convoy.bonusPerTruck),
             maxBonus = Config.Coop.convoy.maxBonus,
@@ -279,7 +276,6 @@ local function stateFor(job, viewer)
         deadline = job.deadline,
         now = os.time(),
         late = job.late,
-        origin = job.trailerPoint and { x = job.trailerPoint.x, y = job.trailerPoint.y, z = job.trailerPoint.z } or nil,
         truckNet = job.truck.net,
         trailerNet = job.trailer and not job.trailer.gone and job.trailer.net or nil,
         truckLabel = job.truck.label,
@@ -863,7 +859,7 @@ local function finish(job, fuel)
     Jobs.active[job.src] = nil
 
     local damage = math.max(0, (job.baseline or 0) - health(job.truck.entity))
-    local km = (Spots.RoadMeters(job.route, job.spot) or Util.RouteLength(job.route, job.trailerPoint)) / 1000
+    local km = Util.RouteLength(job.route, job.trailerPoint) / 1000
     local result = payout(job, damage, km)
     local route = job.route
     local cid, src = job.cid, job.src

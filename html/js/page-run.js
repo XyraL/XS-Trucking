@@ -123,18 +123,6 @@ XS.Pages.run = (() => {
         return 'Drop this load';
     }
 
-    function pointsFor(ctx, run) {
-        const load = (ctx.board.loads || []).find((l) => l.id === run.routeId);
-        const start = (load && load.origin) || run.origin || (run.stage === 'hookup' && run.target) || ctx.board.spot.laptop;
-        return [start, ...run.stops];
-    }
-
-    function mapRoute(ctx, run) {
-        const points = pointsFor(ctx, run);
-        const known = XS.Paths.get(points);
-        return [{ id: 1, illegal: run.illegal, points, line: known ? known.line : null }];
-    }
-
     function empty() {
         return `<div class="glass" style="height:100%;display:grid;place-items:center"><div class="empty">${XS.icon('run')}<h3>You are not on a load</h3>
             <p>Pick one on the Loads page. Your truck will be waiting in a bay.</p><button class="btn primary" data-goto="loads">${XS.icon('loads')}See loads</button></div></div>`;
@@ -213,9 +201,9 @@ XS.Pages.run = (() => {
                 </div>
             </div></div>`;
 
+        const route = [run.stage === 'hookup' && run.target ? run.target : null, ...run.stops].filter(Boolean);
         tilt = XS.Tilt.create(el.querySelector('.tiltbox'));
-        tilt.show(mapRoute(ctx, run), 1);
-        XS.Paths.want([{ points: pointsFor(ctx, run), label: run.label }]);
+        tilt.show([{ id: 1, illegal: run.illegal, points: route.length > 1 ? route : [ctx.board.spot.laptop, ...run.stops] }], 1);
         paintLive();
         live(XS.Hud.last());
         if (run.crew || run.role === 'driver') poll = setInterval(refreshRun, 4000);
@@ -281,11 +269,6 @@ XS.Pages.run = (() => {
         clearInterval(poll);
         poll = null;
     }
-
-    XS.Paths.on(() => {
-        if (!host || !tilt || !current || !current.board.run || !XS.Laptop.ctx.open || XS.Laptop.ctx.page !== 'run') return;
-        tilt.update(mapRoute(current, current.board.run));
-    });
 
     return { render, live, leave };
 })();

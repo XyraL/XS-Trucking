@@ -99,19 +99,6 @@ end
 
 Spots.NormalizeRoute = normalizeRoute
 
-local function cleanRoad(road)
-    if type(road) ~= 'table' then return nil end
-    local out, any = {}, false
-    for key, meters in pairs(road) do
-        local id, value = tonumber(key), tonumber(meters)
-        if id and value and value > 0 then
-            out[tostring(math.floor(id))] = math.floor(value)
-            any = true
-        end
-    end
-    return any and out or nil
-end
-
 local function spotRow(row)
     local data = Util.Decode(row.data) or {}
     data.name = row.name
@@ -132,7 +119,6 @@ local function routeRow(row)
     route.id = row.id
     route.spot = tonumber(row.spot_id) or 0
     route.enabled = Util.Truthy(row.enabled)
-    route.road = cleanRoad(data.road)
     return route
 end
 
@@ -148,7 +134,6 @@ local function routeData(route)
         cargo = route.cargo, type = route.type, model = route.model, weight = route.weight, pickup = route.pickup,
         stops = route.stops, pay = route.pay, xp = route.xp, level = route.level, cert = route.cert,
         timer = route.timer, convoy = route.convoy, escorts = route.escorts, illegal = route.illegal, fragile = route.fragile,
-        road = route.road,
     })
 end
 
@@ -326,37 +311,9 @@ function Spots.DeleteRoute(id)
     return true
 end
 
-function Spots.RoadMeters(route, spotId)
-    return route and route.road and route.road[tostring(spotId)] or nil
-end
-
-function Spots.PlausibleRoad(route, origin, meters)
-    meters = tonumber(meters)
-    if not meters then return nil end
-    local straight = Util.RouteLength(route, origin)
-    if meters < straight * 0.9 or meters > straight * 4 + 3000 then return nil end
-    return math.floor(meters)
-end
-
-function Spots.SetRoad(routeId, spotId, meters)
-    local route, spot = Spots.Route(routeId), Spots.Get(spotId)
-    if not route or not spot then return false end
-    if route.spot ~= 0 and route.spot ~= spot.id then return false end
-
-    meters = Spots.PlausibleRoad(route, Spots.Origin(spot, route), meters)
-    if not meters then return false end
-
-    local key = tostring(spot.id)
-    route.road = route.road or {}
-    if route.road[key] and math.abs(route.road[key] - meters) < 25 then return true end
-    route.road[key] = meters
-    MySQL.update('UPDATE xs_trucking_routes SET `data` = ? WHERE `id` = ?', { routeData(route), route.id })
-    return true
-end
-
-function Spots.SuggestPay(route, origin, meters)
+function Spots.SuggestPay(route, origin)
     local cfg = Config.Pay.suggest
-    local km = (meters or Util.RouteLength(route, origin)) / 1000
+    local km = Util.RouteLength(route, origin) / 1000
     local mult = cfg.types[route.type] or 1.0
     local stops = math.max(0, #(route.stops or {}) - 1)
     return {

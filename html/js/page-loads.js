@@ -224,35 +224,11 @@ XS.Pages.loads = (() => {
         </div>`;
     }
 
-    function pointsFor(ctx, l) {
-        return [l.origin || ctx.board.spot.laptop, ...l.stops];
-    }
-
     function routesFor(ctx) {
-        return (ctx.board.loads || []).map((l) => {
-            const points = pointsFor(ctx, l);
-            const known = XS.Paths.get(points);
-            return { id: l.id, illegal: l.illegal, points, line: known ? known.line : null };
-        });
-    }
-
-    function applyRoad(ctx) {
-        for (const l of ctx.board.loads || []) {
-            const known = !l.road && XS.Paths.get(pointsFor(ctx, l));
-            if (!known || !known.meters) continue;
-            l.km = Math.round(known.meters / 10) / 100;
-            l.minutes = XS.Paths.minutes(l.km);
-        }
-    }
-
-    function wantPaths(ctx) {
-        XS.Paths.want((ctx.board.loads || []).map((l) => ({
-            points: pointsFor(ctx, l), route: l.id, spot: ctx.board.spot.id, report: !!ctx.board.admin && !l.road, label: l.label,
-        })));
-    }
-
-    function etaText(l) {
-        return `<b>${XS.esc(l.label)}</b><span>${XS.dist(l.km)} · ${l.minutes} min · ${XS.money(l.pay)}</span>`;
+        return (ctx.board.loads || []).map((l) => ({
+            id: l.id, illegal: l.illegal,
+            points: [l.origin || ctx.board.spot.laptop, ...l.stops],
+        }));
     }
 
     function placeEta(ctx) {
@@ -261,7 +237,7 @@ XS.Pages.loads = (() => {
         if (!bubble) return;
         const l = (ctx.board.loads || []).find((x) => x.id === selected);
         if (!l) { bubble.style.opacity = 0; return; }
-        bubble.innerHTML = etaText(l);
+        bubble.innerHTML = `<b>${XS.esc(l.label)}</b><span>${XS.dist(l.km)} · ${l.minutes} min · ${XS.money(l.pay)}</span>`;
         bubble.style.opacity = 0;
         etaTimer = setTimeout(() => {
             const at = tilt && tilt.anchor();
@@ -355,11 +331,9 @@ XS.Pages.loads = (() => {
             carousel.scrollLeft += e.deltaY;
             e.preventDefault();
         }, { passive: false });
-        applyRoad(ctx);
         tilt.show(routesFor(ctx), selected, ctx.board.spot.laptop);
         paint(ctx);
         placeEta(ctx);
-        wantPaths(ctx);
 
         clearInterval(poll);
         poll = setInterval(() => refreshCrews(false), 3000);
@@ -462,16 +436,6 @@ XS.Pages.loads = (() => {
     function crew() {
         refreshCrews(true);
     }
-
-    XS.Paths.on(() => {
-        if (!host || !current || !tilt || !XS.Laptop.ctx.open || XS.Laptop.ctx.page !== 'loads') return;
-        applyRoad(current);
-        tilt.update(routesFor(current));
-        paint(current, true);
-        const bubble = host.querySelector('.eta');
-        const l = (current.board.loads || []).find((x) => x.id === selected);
-        if (bubble && l && bubble.style.opacity === '1') bubble.innerHTML = etaText(l);
-    });
 
     function leave() {
         clearTimeout(etaTimer);

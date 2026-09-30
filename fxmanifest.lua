@@ -25,7 +25,6 @@ client_scripts {
     'bridge/fuel.lua',
     'bridge/dispatch.lua',
     'client/ui.lua',
-    'client/paths.lua',
     'client/main.lua',
     'client/placement.lua',
     'client/job.lua',
