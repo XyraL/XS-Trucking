@@ -2,6 +2,11 @@
 
 All notable changes to **XS-Trucking**.
 
+## [3.0.1] — 2026-10-11
+
+- Fixed trucks and escort cars coming without keys on servers running qb-vehiclekeys
+- Added `Config.Job.requiredJob`: only players with that job can take loads, for servers that hire drivers at City Hall
+
 ## [3.0.0] — 2026-09-30
 
 A full rebuild with a new look. The job is now built in game.
