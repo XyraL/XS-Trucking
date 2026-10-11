@@ -20,12 +20,17 @@ do
 end
 
 local SERVER_SIDE = {
-    qbx_vehiclekeys = true, ['Renewed-Vehiclekeys'] = true, wasabi_carlock = true, custom = true,
+    qbx_vehiclekeys = true, ['Renewed-Vehiclekeys'] = true, wasabi_carlock = true, ['qb-vehiclekeys'] = true, custom = true,
 }
+
+local function trim(plate)
+    return (tostring(plate or ''):gsub('^%s+', ''):gsub('%s+$', ''))
+end
 
 if IsDuplicityVersion() then
     function Keys.Give(src, vehicle, plate)
         if not Keys.name then return end
+        plate = trim(plate)
 
         if not SERVER_SIDE[Keys.name] then
             TriggerClientEvent('XS-Trucking:client:giveKeys', src, NetworkGetNetworkIdFromEntity(vehicle), plate)
@@ -39,6 +44,10 @@ if IsDuplicityVersion() then
                 exports['Renewed-Vehiclekeys']:addKey(src, plate)
             elseif Keys.name == 'wasabi_carlock' then
                 exports.wasabi_carlock:GiveKey(src, plate)
+            elseif Keys.name == 'qb-vehiclekeys' then
+                if not pcall(function() exports['qb-vehiclekeys']:GiveKeys(src, plate) end) then
+                    TriggerClientEvent('XS-Trucking:client:giveKeys', src, NetworkGetNetworkIdFromEntity(vehicle), plate)
+                end
             elseif Keys.name == 'custom' then
                 if Config.CustomKeysEvent == '' then error('Config.CustomKeysEvent is empty') end
                 TriggerEvent(Config.CustomKeysEvent, src, plate, NetworkGetNetworkIdFromEntity(vehicle))

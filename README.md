@@ -130,6 +130,11 @@ Replace the whole folder, including `config.lua` — it is new. Levels, trucks,
 trailers and companies carry over. Old Cipher-Trucking progress is brought over
 too, the first time it starts.
 
+## Hired drivers only
+
+Set `Config.Job.requiredJob` to a job, for example `'trucker'`, and only players
+with that job can take loads, start a crew or join one.
+
 ## Your own keys resource
 
 Set `Config.Bridges.keys = 'custom'` and `Config.CustomKeysEvent` to a server

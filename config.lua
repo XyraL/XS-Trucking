@@ -90,6 +90,10 @@ Config.Job = {
 
     -- Seconds between being able to take loads, after cancelling one.
     cancelCooldown = 60,
+
+    -- Only players with this job can take loads, for example 'trucker' when
+    -- drivers are hired at City Hall. false lets anyone drive.
+    requiredJob = false,
 }
 
 -- ── Trailer types ──────────────────────────────────────────────────────────

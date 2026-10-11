@@ -377,6 +377,10 @@ function Jobs.Validate(src, spotId, routeId, reach)
     local cid = Framework.GetCitizenId(src)
     if not cid then return false, 'No character loaded.' end
 
+    if Config.Job.requiredJob and Framework.GetJobName(src) ~= Config.Job.requiredJob then
+        return false, 'Only hired truckers can take loads.'
+    end
+
     local spot = Spots.Get(spotId)
     if not spot or not spot.enabled then return false, 'This spot is closed.' end
 

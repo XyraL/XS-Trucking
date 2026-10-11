@@ -53,6 +53,12 @@ if IsDuplicityVersion() then
         return nil
     end
 
+    function Framework.GetJobName(src)
+        local player = Framework.GetPlayer(src)
+        local job = player and player.PlayerData and player.PlayerData.job
+        return job and job.name or nil
+    end
+
     function Framework.GetCitizenId(src)
         local player = Framework.GetPlayer(src)
         return player and player.PlayerData and player.PlayerData.citizenid or nil
