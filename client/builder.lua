@@ -43,7 +43,7 @@ RegisterNUICallback('place', function(data, cb)
         others = data.others,
     })
 
-    SetNuiFocus(true, true)
+    if UI.open then SetNuiFocus(true, true) end
     UI.Send('unhide')
     cb(point or false)
 end)

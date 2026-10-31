@@ -364,6 +364,10 @@ Red means it would hit one.]]):format(options.label or 'Placing a point'), { pos
     return result
 end
 
+RegisterNetEvent('QBCore:Client:OnPlayerUnload', function()
+    Placement.active = false
+end)
+
 AddEventHandler('onResourceStop', function(resource)
     if resource ~= GetCurrentResourceName() or not Placement.active then return end
 

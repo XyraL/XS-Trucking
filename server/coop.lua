@@ -238,8 +238,7 @@ CreateThread(function()
     end
 end)
 
-AddEventHandler('playerDropped', function()
-    local src = source
+local function leave(src)
     rideInvites[src] = nil
     local lobby = lobbyOf(src)
     if not lobby then return end
@@ -249,4 +248,12 @@ AddEventHandler('playerDropped', function()
         lobby.members[src] = nil
         refresh(lobby)
     end
+end
+
+AddEventHandler('playerDropped', function()
+    leave(source)
+end)
+
+AddEventHandler('QBCore:Server:OnPlayerUnload', function(src)
+    leave(tonumber(src) or source)
 end)

@@ -484,3 +484,7 @@ end
 AddEventHandler('playerDropped', function()
     selected[source] = nil
 end)
+
+AddEventHandler('QBCore:Server:OnPlayerUnload', function(src)
+    selected[tonumber(src) or source] = nil
+end)

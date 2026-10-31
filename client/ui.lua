@@ -124,6 +124,10 @@ RegisterNetEvent('XS-Trucking:client:rideInvite', function(data)
     if not ok then Framework.Notify(result or 'Could not join them.', 'error') end
 end)
 
+RegisterNetEvent('QBCore:Client:OnPlayerUnload', function()
+    UI.Close()
+end)
+
 AddEventHandler('onResourceStop', function(resource)
     if resource ~= GetCurrentResourceName() then return end
     if UI.open then SetNuiFocus(false, false) end

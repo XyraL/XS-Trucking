@@ -5,7 +5,7 @@ lua54 'yes'
 name 'XS-Trucking'
 author 'XyraL'
 description 'Trucking job for Qbox and QBCore: trucking spots and routes built in game, skills, certificates, co-op, businesses and illegal runs.'
-version '3.0.1'
+version '3.0.2'
 
 dependencies {
     'ox_lib',

@@ -462,13 +462,17 @@ RegisterNetEvent('XS-Trucking:client:run', function(state)
     if state.role == 'driver' and state.stage == 'hookup' then hitchWatch(state.id) end
 end)
 
-RegisterNetEvent('XS-Trucking:client:runEnded', function(reason, summary)
+local function reset()
     Run.state = nil
     Run.truck, Run.trailer, Run.parts = 0, 0, nil
     shownKey, watching = nil, nil
     clearBlips()
     setPrompt(nil)
     UI.Send('hud', false)
+end
+
+RegisterNetEvent('XS-Trucking:client:runEnded', function(reason, summary)
+    reset()
 
     if reason == 'done' then
         UI.Send('receipt', summary)
@@ -534,6 +538,8 @@ CreateThread(function()
         if state.role == 'driver' and state.stage == 'hookup' then hitchWatch(state.id) end
     end
 end)
+
+RegisterNetEvent('QBCore:Client:OnPlayerUnload', reset)
 
 AddEventHandler('onResourceStop', function(resource)
     if resource ~= GetCurrentResourceName() then return end

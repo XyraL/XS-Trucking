@@ -1280,8 +1280,7 @@ CreateThread(function()
     end
 end)
 
-AddEventHandler('playerDropped', function()
-    local src = source
+local function leave(src)
     local job = Jobs.active[src]
     if job then drop(job, 'lost', '') end
     if Jobs.riders[src] then
@@ -1292,7 +1291,16 @@ AddEventHandler('playerDropped', function()
         end
         Jobs.riders[src] = nil
     end
+end
+
+AddEventHandler('playerDropped', function()
+    local src = source
+    leave(src)
     cooldown[src] = nil
+end)
+
+AddEventHandler('QBCore:Server:OnPlayerUnload', function(src)
+    leave(tonumber(src) or source)
 end)
 
 CreateThread(function()

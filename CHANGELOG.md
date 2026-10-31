@@ -2,6 +2,13 @@
 
 All notable changes to **XS-Trucking**.
 
+## [3.0.2] — 2026-10-30
+
+- Switching character ends your run, takes you out of your co-op lobby and clears invites
+- Fixed the screen locking after placing a builder point once the builder was closed
+
+Replace everything except your config.lua. No SQL to run.
+
 ## [3.0.1] — 2026-10-11
 
 - Fixed trucks and escort cars coming without keys on servers running qb-vehiclekeys

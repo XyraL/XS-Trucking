@@ -589,3 +589,7 @@ end
 AddEventHandler('playerDropped', function()
     invites[source] = nil
 end)
+
+AddEventHandler('QBCore:Server:OnPlayerUnload', function(src)
+    invites[tonumber(src) or source] = nil
+end)
